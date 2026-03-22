@@ -59,6 +59,8 @@ export type ConversationRecord = {
   lastAssistantUpdateAt: string | null;
   selectedModelKey: string | null;
   selectedProfileKey?: string | null;
+  fallbackEnabled?: boolean;
+  profilePrimaryModelKey?: string | null;
   // Sub-agent metadata
   parentConversationId?: string | null;
   parentToolCallId?: string | null;
@@ -567,6 +569,8 @@ export function RuntimeProvider({
   reasoningEffort,
   selectedProfileKey,
   fallbackEnabled,
+  onModelFallback,
+  onConversationSettingsLoaded,
 }: {
   children: ReactNode;
   conversationId?: string | null;
@@ -574,6 +578,8 @@ export function RuntimeProvider({
   reasoningEffort?: ReasoningEffort;
   selectedProfileKey?: string | null;
   fallbackEnabled?: boolean;
+  onModelFallback?: (toModelKey: string) => void;
+  onConversationSettingsLoaded?: (settings: { selectedModelKey: string | null; selectedProfileKey: string | null; fallbackEnabled: boolean; profilePrimaryModelKey: string | null }) => void;
 }) {
   const [tree, setTree] = useState<StoredMessage[]>([]);
   const [headId, setHeadId] = useState<string | null>(null);
@@ -585,6 +591,10 @@ export function RuntimeProvider({
   const treeRef = useRef<StoredMessage[]>([]);
   const headIdRef = useRef<string | null>(null);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onModelFallbackRef = useRef(onModelFallback);
+  onModelFallbackRef.current = onModelFallback;
+  const onConversationSettingsLoadedRef = useRef(onConversationSettingsLoaded);
+  onConversationSettingsLoadedRef.current = onConversationSettingsLoaded;
   const { consumeAttachments } = useAttachments();
 
   // Sub-agent state — backed by module-level globals so it survives remounts
@@ -632,6 +642,15 @@ export function RuntimeProvider({
     if (conv.runStatus === 'running' && !hasActiveStream) {
       void persistConversation(id, t, h, { runStatus: 'idle' });
     }
+
+    // Restore per-conversation settings (model, profile, fallback)
+    onConversationSettingsLoadedRef.current?.({
+      selectedModelKey: conv.selectedModelKey ?? null,
+      selectedProfileKey: conv.selectedProfileKey ?? null,
+      fallbackEnabled: conv.fallbackEnabled ?? false,
+      profilePrimaryModelKey: conv.profilePrimaryModelKey ?? null,
+    });
+
     return true;
   }, []);
 
@@ -842,6 +861,7 @@ export function RuntimeProvider({
         const fbData = e.data as {
           fromModel: string;
           toModel: string;
+          toModelKey?: string;
           error: string;
           reason?: string;
           discardPartialAssistant?: boolean;
@@ -858,6 +878,10 @@ export function RuntimeProvider({
           });
           if (fallbackBannerTimerRef.current) clearTimeout(fallbackBannerTimerRef.current);
           fallbackBannerTimerRef.current = setTimeout(() => setFallbackBanner(null), 8000);
+          // Update model selector to show the fallback model
+          if (fbData.toModelKey) {
+            onModelFallbackRef.current?.(fbData.toModelKey);
+          }
         }
       } else if (e.type === 'error') {
         if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; }

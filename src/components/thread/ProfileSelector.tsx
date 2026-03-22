@@ -16,7 +16,7 @@ type ProfileCatalog = {
 
 export const ProfileSelector: FC<{
   selectedProfileKey: string | null;
-  onSelectProfile: (key: string | null) => void;
+  onSelectProfile: (key: string | null, primaryModelKey: string | null) => void;
 }> = ({ selectedProfileKey, onSelectProfile }) => {
   const [catalog, setCatalog] = useState<ProfileCatalog | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -62,7 +62,7 @@ export const ProfileSelector: FC<{
             {/* No profile option */}
             <button
               type="button"
-              onClick={() => { onSelectProfile(null); setIsOpen(false); }}
+              onClick={() => { onSelectProfile(null, null); setIsOpen(false); }}
               className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                 !currentKey ? 'bg-primary/12 text-foreground' : 'hover:bg-muted'
               }`}
@@ -74,7 +74,7 @@ export const ProfileSelector: FC<{
               <button
                 key={profile.key}
                 type="button"
-                onClick={() => { onSelectProfile(profile.key); setIsOpen(false); }}
+                onClick={() => { onSelectProfile(profile.key, profile.primaryModelKey); setIsOpen(false); }}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                   profile.key === currentKey
                     ? 'bg-primary/12 text-foreground'

@@ -43,7 +43,7 @@ export const Thread: FC<{
   reasoningEffort: ReasoningEffort;
   onChangeReasoningEffort: (value: ReasoningEffort) => void;
   selectedProfileKey: string | null;
-  onSelectProfile: (key: string | null) => void;
+  onSelectProfile: (key: string | null, primaryModelKey: string | null) => void;
   fallbackEnabled: boolean;
   onToggleFallback: (value: boolean) => void;
 }> = ({ selectedModelKey, onSelectModel, reasoningEffort, onChangeReasoningEffort, selectedProfileKey, onSelectProfile, fallbackEnabled, onToggleFallback }) => {
@@ -594,7 +594,7 @@ const Composer: FC<{
   reasoningEffort: ReasoningEffort;
   onChangeReasoningEffort: (value: ReasoningEffort) => void;
   selectedProfileKey: string | null;
-  onSelectProfile: (key: string | null) => void;
+  onSelectProfile: (key: string | null, primaryModelKey: string | null) => void;
   fallbackEnabled: boolean;
   onToggleFallback: (value: boolean) => void;
 }> = ({ selectedModelKey, onSelectModel, reasoningEffort, onChangeReasoningEffort, selectedProfileKey, onSelectProfile, fallbackEnabled, onToggleFallback }) => {

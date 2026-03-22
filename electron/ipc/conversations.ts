@@ -21,6 +21,9 @@ type ConversationRecord = {
   hasUnread: boolean;
   lastAssistantUpdateAt: string | null;
   selectedModelKey: string | null;
+  selectedProfileKey?: string | null;
+  fallbackEnabled?: boolean;
+  profilePrimaryModelKey?: string | null;
 };
 
 type ConversationsStore = {

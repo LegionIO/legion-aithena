@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { legion } from '@/lib/ipc-client';
-import { registerPluginComponents } from '@/components/plugins/PluginComponentRegistry';
+import { registerPluginComponents, type PluginComponent } from '@/components/plugins/PluginComponentRegistry';
 
 type PluginBannerDescriptor = {
   id: string;
@@ -110,7 +110,7 @@ function loadPluginRendererScripts(
             mod.register({
               React,
               registerComponents: (name: string, components: Record<string, unknown>) => {
-                registerPluginComponents(name, components as Record<string, React.ComponentType<unknown>>);
+                registerPluginComponents(name, components as Record<string, PluginComponent>);
               },
             });
             console.info(`[PluginProvider] Loaded renderer for plugin "${pluginName}"`);

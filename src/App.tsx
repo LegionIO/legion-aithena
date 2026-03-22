@@ -67,6 +67,9 @@ function AppShell() {
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium');
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
   const [fallbackEnabled, setFallbackEnabled] = useState(false);
+  // Track the primary model key of the currently selected profile so we can
+  // restore it when auto-routing is re-enabled.
+  const [profilePrimaryModelKey, setProfilePrimaryModelKey] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [dragState, setDragState] = useState<{ startX: number; startWidth: number } | null>(null);
   const { config, updateConfig } = useConfig();
@@ -194,6 +197,11 @@ function AppShell() {
     await legion.conversations.setActiveId(newId);
     setSettingsOpen(false);
     setActiveConversationId(newId);
+    // Reset per-conversation settings for the new conversation
+    setSelectedModelKey(null);
+    setSelectedProfileKey(null);
+    setFallbackEnabled(false);
+    setProfilePrimaryModelKey(null);
   }, [cleanupAbandonedConversation]);
 
   const handleSettingsToggle = useCallback(async () => {
@@ -223,6 +231,59 @@ function AppShell() {
     return cleanup;
   }, []);
 
+  // When selecting a non-default profile, auto-enable fallback routing and
+  // update the model selector to show the profile's primary model.
+  const handleSelectProfile = useCallback((key: string | null, primaryModelKey: string | null) => {
+    setSelectedProfileKey(key);
+    setProfilePrimaryModelKey(primaryModelKey);
+    if (key !== null) {
+      setFallbackEnabled(true);
+      if (primaryModelKey) setSelectedModelKey(primaryModelKey);
+    } else {
+      setFallbackEnabled(false);
+      setSelectedModelKey(null);
+    }
+  }, []);
+
+  // When toggling auto-routing back ON with an active profile, restore the
+  // profile's primary model in the model selector.
+  const handleToggleFallback = useCallback((enabled: boolean) => {
+    setFallbackEnabled(enabled);
+    if (enabled && selectedProfileKey && profilePrimaryModelKey) {
+      setSelectedModelKey(profilePrimaryModelKey);
+    }
+  }, [selectedProfileKey, profilePrimaryModelKey]);
+
+  // Restore per-conversation settings when switching conversations
+  const handleConversationSettingsLoaded = useCallback((settings: {
+    selectedModelKey: string | null;
+    selectedProfileKey: string | null;
+    fallbackEnabled: boolean;
+    profilePrimaryModelKey: string | null;
+  }) => {
+    setSelectedModelKey(settings.selectedModelKey);
+    setSelectedProfileKey(settings.selectedProfileKey);
+    setFallbackEnabled(settings.fallbackEnabled);
+    setProfilePrimaryModelKey(settings.profilePrimaryModelKey);
+  }, []);
+
+  // Persist per-conversation settings whenever they change
+  useEffect(() => {
+    if (!activeConversationId) return;
+    legion.conversations.get(activeConversationId).then((conv: unknown) => {
+      const record = conv as Record<string, unknown> | null;
+      if (!record) return;
+      legion.conversations.put({
+        ...record,
+        selectedModelKey,
+        selectedProfileKey,
+        fallbackEnabled,
+        profilePrimaryModelKey,
+        updatedAt: new Date().toISOString(),
+      } as any);
+    }).catch(() => {});
+  }, [activeConversationId, selectedModelKey, selectedProfileKey, fallbackEnabled, profilePrimaryModelKey]);
+
   return (
     <AttachmentProvider>
       <DropZone>
@@ -232,6 +293,8 @@ function AppShell() {
         reasoningEffort={reasoningEffort}
         selectedProfileKey={selectedProfileKey}
         fallbackEnabled={fallbackEnabled}
+        onModelFallback={setSelectedModelKey}
+        onConversationSettingsLoaded={handleConversationSettingsLoaded}
       >
         <PluginModalHost />
         <div className="flex h-full bg-transparent text-foreground">
@@ -312,9 +375,9 @@ function AppShell() {
                   reasoningEffort={reasoningEffort}
                   onChangeReasoningEffort={setReasoningEffort}
                   selectedProfileKey={selectedProfileKey}
-                  onSelectProfile={setSelectedProfileKey}
+                  onSelectProfile={handleSelectProfile}
                   fallbackEnabled={fallbackEnabled}
-                  onToggleFallback={setFallbackEnabled}
+                  onToggleFallback={handleToggleFallback}
                 />
               )}
             </div>
@@ -333,7 +396,7 @@ const ThreadOrSubAgent: FC<{
   reasoningEffort: ReasoningEffort;
   onChangeReasoningEffort: (value: ReasoningEffort) => void;
   selectedProfileKey: string | null;
-  onSelectProfile: (key: string | null) => void;
+  onSelectProfile: (key: string | null, primaryModelKey: string | null) => void;
   fallbackEnabled: boolean;
   onToggleFallback: (value: boolean) => void;
 }> = ({ selectedModelKey, onSelectModel, reasoningEffort, onChangeReasoningEffort, selectedProfileKey, onSelectProfile, fallbackEnabled, onToggleFallback }) => {
