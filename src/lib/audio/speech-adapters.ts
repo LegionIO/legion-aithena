@@ -1,0 +1,273 @@
+/**
+ * Speech adapter factories for assistant-ui runtime.
+ * Uses the OS-native Web Speech API for both TTS and dictation.
+ */
+
+// -- Types matching @assistant-ui/core adapter interfaces --
+
+type Unsubscribe = () => void;
+
+export namespace SpeechSynthesisAdapterTypes {
+  export type Status =
+    | { type: 'starting' | 'running' }
+    | { type: 'ended'; reason: 'finished' | 'cancelled' | 'error'; error?: unknown };
+
+  export type Utterance = {
+    status: Status;
+    cancel: () => void;
+    subscribe: (callback: () => void) => Unsubscribe;
+  };
+}
+
+export type SpeechSynthesisAdapter = {
+  speak: (text: string) => SpeechSynthesisAdapterTypes.Utterance;
+};
+
+export namespace DictationAdapterTypes {
+  export type Status =
+    | { type: 'starting' | 'running' }
+    | { type: 'ended'; reason: 'stopped' | 'cancelled' | 'error' };
+
+  export type Result = {
+    transcript: string;
+    isFinal?: boolean;
+  };
+
+  export type Session = {
+    status: Status;
+    stop: () => Promise<void>;
+    cancel: () => void;
+    onSpeechStart: (callback: () => void) => Unsubscribe;
+    onSpeechEnd: (callback: (result: Result) => void) => Unsubscribe;
+    onSpeech: (callback: (result: Result) => void) => Unsubscribe;
+  };
+}
+
+export type DictationAdapter = {
+  listen: () => DictationAdapterTypes.Session;
+  disableInputDuringDictation?: boolean;
+};
+
+// -- TTS Config --
+
+type TtsConfig = {
+  enabled: boolean;
+  voice?: string;
+  rate: number;
+};
+
+// -- Dictation Config --
+
+type DictationConfig = {
+  enabled: boolean;
+  language?: string;
+  continuous: boolean;
+};
+
+// -----------------------------------------------------------------
+// TTS Adapter — wraps window.speechSynthesis
+// -----------------------------------------------------------------
+
+export function createSpeechAdapter(config: TtsConfig): SpeechSynthesisAdapter {
+  return {
+    speak(text: string): SpeechSynthesisAdapterTypes.Utterance {
+      const listeners = new Set<() => void>();
+      let status: SpeechSynthesisAdapterTypes.Status = { type: 'starting' };
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = config.rate ?? 1;
+
+      // Try to apply the configured voice
+      if (config.voice) {
+        const voices = window.speechSynthesis.getVoices();
+        const match = voices.find((v) => v.name === config.voice);
+        if (match) utterance.voice = match;
+      }
+
+      const notify = () => listeners.forEach((cb) => cb());
+
+      utterance.onstart = () => {
+        status = { type: 'running' };
+        notify();
+      };
+
+      utterance.onend = () => {
+        status = { type: 'ended', reason: 'finished' };
+        notify();
+      };
+
+      utterance.onerror = (event) => {
+        if ((event as SpeechSynthesisErrorEvent).error === 'canceled') {
+          status = { type: 'ended', reason: 'cancelled' };
+        } else {
+          status = { type: 'ended', reason: 'error', error: event };
+        }
+        notify();
+      };
+
+      window.speechSynthesis.speak(utterance);
+
+      return {
+        get status() {
+          return status;
+        },
+        cancel() {
+          window.speechSynthesis.cancel();
+          status = { type: 'ended', reason: 'cancelled' };
+          notify();
+        },
+        subscribe(callback: () => void): Unsubscribe {
+          listeners.add(callback);
+          return () => listeners.delete(callback);
+        },
+      };
+    },
+  };
+}
+
+// -----------------------------------------------------------------
+// Dictation Adapter — wraps Web Speech Recognition API
+// -----------------------------------------------------------------
+
+interface SpeechRecognitionInstance extends EventTarget {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionInstance;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
+
+export function isDictationSupported(): boolean {
+  return typeof window !== 'undefined' &&
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+export function createDictationAdapter(config: DictationConfig): DictationAdapter {
+  return {
+    listen(): DictationAdapterTypes.Session {
+      const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognitionClass) {
+        throw new Error('Speech recognition is not supported in this browser.');
+      }
+
+      const recognition = new SpeechRecognitionClass();
+      recognition.lang = config.language ?? 'en-US';
+      recognition.continuous = config.continuous ?? true;
+      recognition.interimResults = true;
+
+      let status: DictationAdapterTypes.Status = { type: 'starting' };
+      const speechStartListeners = new Set<() => void>();
+      const speechEndListeners = new Set<(result: DictationAdapterTypes.Result) => void>();
+      const speechListeners = new Set<(result: DictationAdapterTypes.Result) => void>();
+      const errorListeners = new Set<(error: string) => void>();
+
+      recognition.addEventListener('start', () => {
+        console.log('[Dictation] Recognition started');
+        status = { type: 'running' };
+      });
+
+      recognition.addEventListener('audiostart', () => {
+        console.log('[Dictation] Audio capture started');
+      });
+
+      recognition.addEventListener('soundstart', () => {
+        console.log('[Dictation] Sound detected');
+      });
+
+      recognition.addEventListener('speechstart', () => {
+        console.log('[Dictation] Speech detected');
+        speechStartListeners.forEach((cb) => cb());
+      });
+
+      recognition.addEventListener('speechend', () => {
+        console.log('[Dictation] Speech ended');
+      });
+
+      recognition.addEventListener('result', (event: Event) => {
+        const e = event as Event & { results: SpeechRecognitionResultList; resultIndex: number };
+        console.log('[Dictation] Result event:', e.results.length, 'results, index:', e.resultIndex);
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const result = e.results[i];
+          if (!result || !result[0]) continue;
+          const transcript = result[0].transcript;
+          const isFinal = result.isFinal;
+          console.log('[Dictation] Transcript:', JSON.stringify(transcript), 'isFinal:', isFinal);
+          speechListeners.forEach((cb) => cb({ transcript, isFinal }));
+          if (isFinal) {
+            speechEndListeners.forEach((cb) => cb({ transcript, isFinal: true }));
+          }
+        }
+      });
+
+      recognition.addEventListener('nomatch', () => {
+        console.log('[Dictation] No speech match detected');
+      });
+
+      recognition.addEventListener('end', () => {
+        console.log('[Dictation] Recognition ended');
+        if (status.type !== 'ended') {
+          status = { type: 'ended', reason: 'stopped' };
+        }
+      });
+
+      recognition.addEventListener('error', (event: Event) => {
+        const errorEvent = event as Event & { error?: string; message?: string };
+        const errorType = errorEvent.error ?? errorEvent.message ?? 'unknown';
+        console.error('[Dictation] Error:', errorType);
+        status = { type: 'ended', reason: 'error' };
+        errorListeners.forEach((cb) => cb(errorType));
+      });
+
+      try {
+        recognition.start();
+        console.log('[Dictation] Recognition.start() called');
+      } catch (err) {
+        console.error('[Dictation] Failed to start:', err);
+        status = { type: 'ended', reason: 'error' };
+        throw err;
+      }
+
+      return {
+        get status() {
+          return status;
+        },
+        async stop() {
+          recognition.stop();
+        },
+        cancel() {
+          recognition.abort();
+          status = { type: 'ended', reason: 'cancelled' };
+        },
+        onSpeechStart(callback) {
+          speechStartListeners.add(callback);
+          return () => speechStartListeners.delete(callback);
+        },
+        onSpeechEnd(callback) {
+          speechEndListeners.add(callback);
+          return () => speechEndListeners.delete(callback);
+        },
+        onSpeech(callback) {
+          speechListeners.add(callback);
+          return () => speechListeners.delete(callback);
+        },
+        /** Non-standard extension: listen for errors */
+        onError(callback: (error: string) => void) {
+          errorListeners.add(callback);
+          return () => errorListeners.delete(callback);
+        },
+      } as DictationAdapterTypes.Session & { onError: (callback: (error: string) => void) => Unsubscribe };
+    },
+  };
+}

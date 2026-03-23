@@ -6,6 +6,8 @@ import {
 } from '@assistant-ui/react';
 import { legion } from '@/lib/ipc-client';
 import { useAttachments } from './AttachmentContext';
+import { useConfig } from './ConfigProvider';
+import { createSpeechAdapter, createDictationAdapter } from '@/lib/audio/speech-adapters';
 
 type ContentPart =
   | { type: 'text'; text: string; source?: 'assistant' | 'observer' }
@@ -597,6 +599,18 @@ export function RuntimeProvider({
   onConversationSettingsLoadedRef.current = onConversationSettingsLoaded;
   const { consumeAttachments } = useAttachments();
 
+  // --- Audio adapters (TTS & Dictation) ---
+  const { config } = useConfig();
+  const audioConfig = (config as Record<string, unknown> | null)?.audio as { tts?: { enabled?: boolean; voice?: string; rate?: number }; dictation?: { enabled?: boolean; language?: string; continuous?: boolean } } | undefined;
+  const speechAdapter = useMemo(
+    () => audioConfig?.tts?.enabled ? createSpeechAdapter({ enabled: true, voice: audioConfig.tts!.voice, rate: audioConfig.tts!.rate ?? 1 }) : undefined,
+    [audioConfig?.tts?.enabled, audioConfig?.tts?.voice, audioConfig?.tts?.rate],
+  );
+  const dictationAdapter = useMemo(
+    () => audioConfig?.dictation?.enabled ? createDictationAdapter({ enabled: true, language: audioConfig.dictation!.language, continuous: audioConfig.dictation!.continuous ?? true }) : undefined,
+    [audioConfig?.dictation?.enabled, audioConfig?.dictation?.language, audioConfig?.dictation?.continuous],
+  );
+
   // Sub-agent state — backed by module-level globals so it survives remounts
   const [subAgentVersion, setSubAgentVersion] = useState(globalSubAgentVersion);
   const [activeSubAgentView, setActiveSubAgentView] = useState<string | null>(null);
@@ -1128,6 +1142,10 @@ export function RuntimeProvider({
     onCancel,
     convertMessage: (m: ThreadMessageLike) => m,
     isRunning,
+    adapters: {
+      ...(speechAdapter ? { speech: speechAdapter } : {}),
+      ...(dictationAdapter ? { dictation: dictationAdapter } : {}),
+    },
   });
 
   const dismissFallbackBanner = useCallback(() => {

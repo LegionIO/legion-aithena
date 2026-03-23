@@ -11,12 +11,13 @@ import { ToolSettings } from './ToolSettings';
 import { AdvancedSettings } from './AdvancedSettings';
 import { McpSettings } from './McpSettings';
 import { SkillSettings } from './SkillSettings';
+import { AudioSettings } from './AudioSettings';
 import type { SettingsProps } from './shared';
 import { usePluginSettingsSections } from '@/components/plugins/PluginSettingsSections';
 import { getPluginComponent } from '@/components/plugins/PluginComponentRegistry';
 import { usePlugins } from '@/providers/PluginProvider';
 
-type SettingsSection = 'models' | 'profiles' | 'memory' | 'compaction' | 'tools' | 'skills' | 'sub-agents' | 'system-prompt' | 'advanced' | 'mcp';
+type SettingsSection = 'models' | 'profiles' | 'memory' | 'compaction' | 'tools' | 'skills' | 'sub-agents' | 'system-prompt' | 'audio' | 'advanced' | 'mcp';
 
 const sections: Array<{ key: SettingsSection; label: string }> = [
   { key: 'models', label: 'Models' },
@@ -28,6 +29,7 @@ const sections: Array<{ key: SettingsSection; label: string }> = [
   { key: 'sub-agents', label: 'Sub-Agents' },
   { key: 'system-prompt', label: 'System Prompt' },
   { key: 'mcp', label: 'MCP Servers' },
+  { key: 'audio', label: 'Audio' },
   { key: 'advanced', label: 'Advanced' },
 ];
 
@@ -112,6 +114,7 @@ export const SettingsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
         {activeSection === 'sub-agents' && <SubAgentSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'system-prompt' && <SystemPromptSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'mcp' && <McpSettings config={config} updateConfig={updateConfig} />}
+        {activeSection === 'audio' && <AudioSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'advanced' && <AdvancedSettings config={config} updateConfig={updateConfig} />}
         {/* Plugin settings sections */}
         {pluginSections.map((ps) => {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, net, MenuItem, clipboard } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Menu, nativeTheme, dialog, net, MenuItem, clipboard, session } from 'electron';
 import { join } from 'path';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
@@ -159,6 +159,16 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' };
   });
 
+  // Grant microphone permission for speech dictation
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    const allowed = ['media', 'microphone', 'audioCapture'];
+    callback(allowed.includes(permission));
+  });
+  mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
+    const allowed = ['media', 'microphone', 'audioCapture'];
+    return allowed.includes(permission);
+  });
+
   // Default right-click context menu
   mainWindow.webContents.on('context-menu', (_event, params) => {
     const menu = new Menu();
@@ -264,6 +274,10 @@ function createWindow(): BrowserWindow {
 
   return mainWindow;
 }
+
+// Enable speech recognition API (required for webkitSpeechRecognition in Electron)
+app.commandLine.appendSwitch('enable-speech-api');
+app.commandLine.appendSwitch('enable-speech-dispatcher');
 
 app.whenReady().then(() => {
   ensureLegionHome();

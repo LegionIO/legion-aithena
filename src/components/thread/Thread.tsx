@@ -21,10 +21,16 @@ import {
   ChevronRightIcon,
   BanIcon,
   CpuIcon,
+  Volume2Icon,
+  SquareIcon,
+  MicIcon,
+  MicOffIcon,
 } from 'lucide-react';
 import { legion } from '@/lib/ipc-client';
 import { useAttachments } from '@/providers/AttachmentContext';
 import { useBranchNav } from '@/providers/RuntimeProvider';
+import { useConfig } from '@/providers/ConfigProvider';
+import { isDictationSupported, createDictationAdapter, type DictationAdapterTypes } from '@/lib/audio/speech-adapters';
 import { MarkdownText } from './MarkdownText';
 import { ToolCallDisplay } from './ToolGroup';
 import { SubAgentInline } from './SubAgentInline';
@@ -231,6 +237,10 @@ function useMatrixCanvas() {
 
 const UserMessage: FC = () => {
   const message = useMessage();
+  const { config } = useConfig();
+  const ttsEnabled = (config as Record<string, unknown> | null)?.audio
+    ? ((config as Record<string, unknown>).audio as { tts?: { enabled?: boolean } })?.tts?.enabled ?? true
+    : true;
   return (
     <MessagePrimitive.Root className="group mb-6 flex justify-end">
       <div className="max-w-[72%]">
@@ -246,6 +256,7 @@ const UserMessage: FC = () => {
         <div className="flex items-center justify-end gap-1">
           <ActionBarPrimitive.Root className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
             <CopyButton />
+            {ttsEnabled && <SpeakButton />}
           </ActionBarPrimitive.Root>
           <MessageTimestamp date={message.createdAt} align="right" />
         </div>
@@ -488,18 +499,25 @@ const AssistantMessage: FC = () => {
   );
 };
 
-const AssistantActionBar: FC = () => (
-  <ActionBarPrimitive.Root className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-    <CopyButton />
-    <ActionBarPrimitive.Reload asChild>
-      <button type="button" className="flex h-7 w-7 items-center justify-center rounded-xl hover:bg-muted transition-colors" title="Regenerate">
-        <RefreshCwIcon className="h-3.5 w-3.5 text-muted-foreground" />
-      </button>
-    </ActionBarPrimitive.Reload>
+const AssistantActionBar: FC = () => {
+  const { config } = useConfig();
+  const ttsEnabled = (config as Record<string, unknown> | null)?.audio
+    ? ((config as Record<string, unknown>).audio as { tts?: { enabled?: boolean } })?.tts?.enabled ?? true
+    : true;
+  return (
+    <ActionBarPrimitive.Root className="mt-1 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <CopyButton />
+      {ttsEnabled && <SpeakButton />}
+      <ActionBarPrimitive.Reload asChild>
+        <button type="button" className="flex h-7 w-7 items-center justify-center rounded-xl hover:bg-muted transition-colors" title="Regenerate">
+          <RefreshCwIcon className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+      </ActionBarPrimitive.Reload>
 
-    <BranchPicker />
-  </ActionBarPrimitive.Root>
-);
+      <BranchPicker />
+    </ActionBarPrimitive.Root>
+  );
+};
 
 /** Custom branch picker using our tree-based branching */
 const BranchPicker: FC = () => {
@@ -541,6 +559,38 @@ const CopyButton: FC = () => {
         {copied ? <CheckIcon className="h-3.5 w-3.5 text-green-500" /> : <CopyIcon className="h-3.5 w-3.5 text-muted-foreground" />}
       </button>
     </ActionBarPrimitive.Copy>
+  );
+};
+
+const SpeakButton: FC = () => {
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  if (isSpeaking) {
+    return (
+      <ActionBarPrimitive.StopSpeaking asChild>
+        <button
+          type="button"
+          onClick={() => setIsSpeaking(false)}
+          className="flex h-7 w-7 items-center justify-center rounded-xl hover:bg-muted transition-colors"
+          title="Stop speaking"
+        >
+          <SquareIcon className="h-3 w-3 text-primary" />
+        </button>
+      </ActionBarPrimitive.StopSpeaking>
+    );
+  }
+
+  return (
+    <ActionBarPrimitive.Speak asChild>
+      <button
+        type="button"
+        onClick={() => setIsSpeaking(true)}
+        className="flex h-7 w-7 items-center justify-center rounded-xl hover:bg-muted transition-colors"
+        title="Read aloud"
+      >
+        <Volume2Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      </button>
+    </ActionBarPrimitive.Speak>
   );
 };
 
@@ -588,6 +638,122 @@ const StopButton: FC = () => {
   );
 };
 
+const DictationButton: FC = () => {
+  const composerRuntime = useComposerRuntime();
+  const { config } = useConfig();
+  const [isListening, setIsListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const sessionRef = useRef<DictationAdapterTypes.Session | null>(null);
+
+  const dictationConfig = (config as Record<string, unknown> | null)?.audio
+    ? ((config as Record<string, unknown>).audio as { dictation?: { enabled?: boolean; language?: string; continuous?: boolean } })?.dictation
+    : undefined;
+
+  const handleToggle = useCallback(() => {
+    setError(null);
+
+    if (isListening) {
+      // Stop listening
+      sessionRef.current?.stop();
+      sessionRef.current = null;
+      setIsListening(false);
+      return;
+    }
+
+    // Start listening
+    if (!isDictationSupported()) {
+      setError('Speech recognition is not supported');
+      console.warn('[Dictation] Speech recognition not supported in this browser/environment.');
+      return;
+    }
+
+    try {
+      const adapter = createDictationAdapter({
+        enabled: true,
+        language: dictationConfig?.language ?? 'en-US',
+        continuous: dictationConfig?.continuous ?? true,
+      });
+
+      const session = adapter.listen();
+      sessionRef.current = session;
+      setIsListening(true);
+
+      // Append transcribed text to composer
+      session.onSpeech((result) => {
+        if (result.isFinal) {
+          const state = composerRuntime.getState();
+          const currentText = state.text ?? '';
+          const separator = currentText && !currentText.endsWith(' ') ? ' ' : '';
+          composerRuntime.setText(currentText + separator + result.transcript);
+        }
+      });
+
+      // Listen for errors to reset state
+      const extSession = session as DictationAdapterTypes.Session & { onError?: (cb: (err: string) => void) => void };
+      extSession.onError?.((err: string) => {
+        console.error('[Dictation] Error received in button:', err);
+        setIsListening(false);
+        sessionRef.current = null;
+        if (err === 'not-allowed') {
+          setError('Microphone permission denied');
+        } else if (err === 'no-speech') {
+          setError('No speech detected — try again');
+        } else if (err === 'network') {
+          setError('Speech recognition requires a network connection');
+        } else {
+          setError(`Dictation error: ${err}`);
+        }
+      });
+    } catch (err) {
+      console.error('[Dictation] Failed to start dictation:', err);
+      setIsListening(false);
+      setError('Failed to start dictation');
+    }
+  }, [isListening, dictationConfig, composerRuntime]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      sessionRef.current?.cancel();
+      sessionRef.current = null;
+    };
+  }, []);
+
+  // Clear error after 5 seconds
+  useEffect(() => {
+    if (!error) return;
+    const timer = setTimeout(() => setError(null), 5000);
+    return () => clearTimeout(timer);
+  }, [error]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={handleToggle}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+          isListening
+            ? 'border-destructive/50 bg-destructive/10 hover:bg-destructive/20'
+            : error
+              ? 'border-yellow-500/50 bg-yellow-500/10'
+              : 'border-border/70 bg-card/70 hover:bg-muted/50'
+        }`}
+        title={error ?? (isListening ? 'Stop dictation' : 'Start dictation')}
+      >
+        {isListening
+          ? <MicOffIcon className="h-4 w-4 text-destructive" />
+          : <MicIcon className={`h-4 w-4 ${error ? 'text-yellow-500' : 'text-muted-foreground'}`} />
+        }
+      </button>
+      {error && (
+        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-lg bg-card border border-border/70 px-2.5 py-1.5 text-[10px] text-muted-foreground shadow-lg">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Composer: FC<{
   selectedModelKey: string | null;
   onSelectModel: (key: string) => void;
@@ -599,6 +765,10 @@ const Composer: FC<{
   onToggleFallback: (value: boolean) => void;
 }> = ({ selectedModelKey, onSelectModel, reasoningEffort, onChangeReasoningEffort, selectedProfileKey, onSelectProfile, fallbackEnabled, onToggleFallback }) => {
   const { attachments, addAttachments, removeAttachment } = useAttachments();
+  const { config } = useConfig();
+  const dictationEnabled = (config as Record<string, unknown> | null)?.audio
+    ? ((config as Record<string, unknown>).audio as { dictation?: { enabled?: boolean } })?.dictation?.enabled ?? true
+    : true;
 
   const handleAttach = async () => {
     try {
@@ -646,6 +816,7 @@ const Composer: FC<{
             <button type="button" onClick={handleAttach} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-card/70 transition-colors hover:bg-muted/50" title="Attach file">
               <PaperclipIcon className="h-4 w-4 text-muted-foreground" />
             </button>
+            {dictationEnabled && <DictationButton />}
             <ProfileSelector
               selectedProfileKey={selectedProfileKey}
               onSelectProfile={onSelectProfile}

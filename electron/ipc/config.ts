@@ -109,6 +109,10 @@ function getDefaultConfig() {
       theme: 'system' as const,
       sidebarWidth: 280,
     },
+    audio: {
+      tts: { enabled: true, rate: 1 },
+      dictation: { enabled: true, language: 'en-US', continuous: true },
+    },
     advanced: {
       temperature: 0.4,
       maxSteps: 10,
@@ -544,6 +548,7 @@ export function desktopConfigPayload(config: LegionConfig): Record<string, unkno
     systemPrompt: config.systemPrompt,
     plugins: config.plugins,
     ui: config.ui,
+    audio: config.audio,
     advanced: config.advanced,
     titleGeneration: config.titleGeneration,
     profiles: config.profiles,

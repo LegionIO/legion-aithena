@@ -157,6 +157,19 @@ const fallbackConfigSchema = z.object({
   modelKeys: z.array(z.string()),
 });
 
+const audioConfigSchema = z.object({
+  tts: z.object({
+    enabled: z.boolean(),
+    voice: z.string().optional(),
+    rate: z.number().min(0.5).max(3),
+  }),
+  dictation: z.object({
+    enabled: z.boolean(),
+    language: z.string().optional(),
+    continuous: z.boolean(),
+  }),
+});
+
 export const legionConfigSchema = z.object({
   models: modelsConfigSchema,
   runtime: runtimeConfigSchema,
@@ -182,6 +195,7 @@ export const legionConfigSchema = z.object({
     theme: z.enum(['light', 'dark', 'system']),
     sidebarWidth: z.number().positive(),
   }),
+  audio: audioConfigSchema,
   advanced: z.object({
     temperature: z.number().min(0).max(2),
     maxSteps: z.number().positive(),
