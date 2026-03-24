@@ -30,10 +30,10 @@ type CatalogEntry = {
   useResponsesApi?: boolean;
 };
 
-type AgentBackend = 'mastra' | 'legion-embedded' | 'legion-daemon';
+type AgentBackend = 'mastra' | 'legion-daemon';
 
 type RuntimeConfig = {
-  agentBackend: AgentBackend;
+  agentBackend?: AgentBackend;
   legion: {
     configDir: string;
     daemonUrl: string;
@@ -49,14 +49,6 @@ type DetectedRuntime = {
 
 type LegionStatus = {
   backend: AgentBackend;
-  embedded: {
-    ok: boolean;
-    status: string;
-    error?: string;
-    rubyPath?: string;
-    rootPath?: string;
-    configDir?: string;
-  };
   daemon: {
     ok: boolean;
     status: string;
@@ -72,7 +64,7 @@ export const ModelSettings: FC<SettingsProps> = ({ config, updateConfig }) => {
     catalog: CatalogEntry[];
   };
   const runtime = ((config.runtime as RuntimeConfig | undefined) ?? {
-    agentBackend: 'legion-embedded',
+    agentBackend: 'mastra',
     legion: {
       configDir: '',
       daemonUrl: 'http://127.0.0.1:4567',
@@ -146,9 +138,6 @@ const RuntimeCard: FC<{
   const [status, setStatus] = useState<LegionStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [detecting, setDetecting] = useState(false);
-  const isMastra = runtime.agentBackend === 'mastra';
-  const isEmbedded = runtime.agentBackend === 'legion-embedded';
-  const isDaemon = runtime.agentBackend === 'legion-daemon';
 
   const loadStatus = async () => {
     setLoading(true);
@@ -163,7 +152,7 @@ const RuntimeCard: FC<{
 
   useEffect(() => {
     void loadStatus();
-  }, [runtime.agentBackend, runtime.legion.configDir, runtime.legion.daemonUrl, runtime.legion.rubyPath]);
+  }, [runtime.legion.configDir, runtime.legion.daemonUrl]);
 
   const applyDetectedRuntime = async () => {
     setDetecting(true);
@@ -178,13 +167,17 @@ const RuntimeCard: FC<{
     }
   };
 
+  const activeRuntimeDetail = status?.backend === 'legion-daemon'
+    ? `Interlink will route chats through the daemon at ${status.daemon.url}.`
+    : 'Interlink will use Mastra until a local Legion Daemon becomes reachable.';
+
   return (
     <div className="rounded-lg border p-3 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Agent Runtime</h4>
           <p className="mt-1 text-xs text-muted-foreground">
-            Choose how Interlink routes chats through AI providers.
+            Interlink automatically uses the Legion Daemon when it is running, and falls back to Mastra otherwise.
           </p>
         </div>
         <button
@@ -196,91 +189,54 @@ const RuntimeCard: FC<{
         </button>
       </div>
 
-      <div>
-        <label className="text-[10px] text-muted-foreground block mb-0.5">Backend</label>
-        <select
-          className={settingsSelectClass}
-          value={runtime.agentBackend}
-          onChange={(e) => updateConfig('runtime.agentBackend', e.target.value as AgentBackend)}
+      <StatusBadge
+        label="Active Runtime"
+        ok={Boolean(status)}
+        status={status?.backend ?? 'checking'}
+        detail={activeRuntimeDetail}
+      />
+
+      <div className="space-y-1">
+        <button
+          type="button"
+          onClick={() => { void applyDetectedRuntime(); }}
+          className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
         >
-          <option value="legion-embedded">Legion Embedded</option>
-          <option value="legion-daemon">Legion Daemon</option>
-          <option value="mastra">Mastra Direct</option>
-        </select>
+          {detecting ? 'Detecting...' : 'Use Detected Setup'}
+        </button>
+        <p className="text-[10px] text-muted-foreground">
+          Auto-fills Legion config dir, daemon URL, and common Ruby shim paths.
+        </p>
       </div>
 
-      {(isEmbedded || isDaemon) ? (
-        <div className="space-y-1">
-          <button
-            type="button"
-            onClick={() => { void applyDetectedRuntime(); }}
-            className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            {detecting ? 'Detecting...' : 'Use Detected Setup'}
-          </button>
-          <p className="text-[10px] text-muted-foreground">
-            Auto-fills Legion config dir, daemon URL, and common Ruby shim paths.
-          </p>
-        </div>
-      ) : null}
+      <div>
+        <label className="text-[10px] text-muted-foreground block mb-0.5">Legion Config Dir</label>
+        <EditableInput
+          className="w-full rounded border bg-card px-2 py-1 text-xs font-mono"
+          value={runtime.legion.configDir}
+          onChange={(value) => updateConfig('runtime.legion.configDir', value)}
+          placeholder="~/.legionio/settings"
+        />
+      </div>
 
-      {(isEmbedded || isDaemon) ? (
-        <div>
-          <label className="text-[10px] text-muted-foreground block mb-0.5">Legion Config Dir</label>
-          <EditableInput
-            className="w-full rounded border bg-card px-2 py-1 text-xs font-mono"
-            value={runtime.legion.configDir}
-            onChange={(value) => updateConfig('runtime.legion.configDir', value)}
-            placeholder="~/.legionio/settings"
-          />
-        </div>
-      ) : null}
+      <div>
+        <label className="text-[10px] text-muted-foreground block mb-0.5">Daemon URL</label>
+        <EditableInput
+          className="w-full rounded border bg-card px-2 py-1 text-xs font-mono"
+          value={runtime.legion.daemonUrl}
+          onChange={(value) => updateConfig('runtime.legion.daemonUrl', value)}
+          placeholder="http://127.0.0.1:4567"
+        />
+      </div>
 
-      {isEmbedded ? (
-        <div>
-          <label className="text-[10px] text-muted-foreground block mb-0.5">Ruby Path</label>
-          <EditableInput
-            className="w-full rounded border bg-card px-2 py-1 text-xs font-mono"
-            value={runtime.legion.rubyPath}
-            onChange={(value) => updateConfig('runtime.legion.rubyPath', value)}
-            placeholder="Auto-detect from PATH, or set ~/.rbenv/shims/ruby"
-          />
-        </div>
-      ) : null}
-
-      {isDaemon ? (
-        <div>
-          <label className="text-[10px] text-muted-foreground block mb-0.5">Daemon URL</label>
-          <EditableInput
-            className="w-full rounded border bg-card px-2 py-1 text-xs font-mono"
-            value={runtime.legion.daemonUrl}
-            onChange={(value) => updateConfig('runtime.legion.daemonUrl', value)}
-            placeholder="http://127.0.0.1:4567"
-          />
-        </div>
-      ) : null}
-
-      {isEmbedded ? (
-        <div className="grid grid-cols-1 gap-2">
-          <StatusBadge
-            label="Embedded Legion"
-            ok={status?.embedded.ok ?? false}
-            status={status?.embedded.status ?? 'unknown'}
-            detail={status?.embedded.error ?? status?.embedded.rubyPath ?? 'Ruby bridge not checked yet.'}
-          />
-        </div>
-      ) : null}
-
-      {isDaemon ? (
-        <div className="grid grid-cols-1 gap-2">
-          <StatusBadge
-            label="Daemon"
-            ok={status?.daemon.ok ?? false}
-            status={status?.daemon.status ?? 'unknown'}
-            detail={status?.daemon.error ?? status?.daemon.url ?? 'Daemon not checked yet.'}
-          />
-        </div>
-      ) : null}
+      <div className="grid grid-cols-1 gap-2">
+        <StatusBadge
+          label="Daemon"
+          ok={status?.daemon.ok ?? false}
+          status={status?.daemon.status ?? 'unknown'}
+          detail={status?.daemon.error ?? status?.daemon.url ?? 'Daemon not checked yet.'}
+        />
+      </div>
     </div>
   );
 };

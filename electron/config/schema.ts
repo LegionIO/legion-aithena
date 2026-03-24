@@ -136,7 +136,7 @@ const legionRuntimeSchema = z.object({
 });
 
 const runtimeConfigSchema = z.object({
-  agentBackend: z.enum(['mastra', 'legion-embedded', 'legion-daemon']),
+  agentBackend: z.enum(['mastra', 'legion-daemon']),
   legion: legionRuntimeSchema,
 });
 

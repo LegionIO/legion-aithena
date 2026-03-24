@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, type FC } from 'react';
-import { XIcon, ChevronRightIcon } from 'lucide-react';
+import { XIcon, ChevronRightIcon, ChevronDownIcon, ServerIcon } from 'lucide-react';
 import { useConfig } from '@/providers/ConfigProvider';
 import { EditableTextarea } from '@/components/EditableTextarea';
 import { EditableInput } from '@/components/EditableInput';
@@ -71,18 +71,21 @@ const sections: Array<{ key: SettingsSection; label: string; group?: string }> =
 
 export const SettingsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
   const [activeSection, setActiveSection] = useState<string>('models');
+  const [daemonNavOpen, setDaemonNavOpen] = useState(false);
   const { config, updateConfig } = useConfig();
   const pluginSections = usePluginSettingsSections();
   const { setPluginConfig, sendAction } = usePlugins();
 
-  // Merge built-in + plugin sections (plugins always shown after Advanced)
   const builtInSections: Array<{ key: string; label: string; group?: string }> = sections;
+  const primarySections = builtInSections.filter((section) => !section.group);
+  const daemonSections = builtInSections.filter((section) => section.group === 'Legion Daemon');
+  const isDaemonSectionActive = daemonSections.some((section) => section.key === activeSection);
   const sortedPluginSections = [...pluginSections].sort((a, b) => a.priority - b.priority);
-  const allSections: Array<{ key: string; label: string }> = [
-    ...builtInSections,
-    ...sortedPluginSections.map((s) => ({ key: s.key, label: s.label })),
-  ];
   const hasPluginSections = sortedPluginSections.length > 0;
+
+  useEffect(() => {
+    if (isDaemonSectionActive) setDaemonNavOpen(true);
+  }, [isDaemonSectionActive]);
 
   if (!config) {
     return (
@@ -95,32 +98,58 @@ export const SettingsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <div className="flex h-full bg-background">
       {/* Section list */}
-      <div className="w-[220px] border-r border-border/70 bg-sidebar/55 p-3 space-y-1 legion-shell-panel">
+      <div className="w-[220px] overflow-y-auto border-r border-border/70 bg-sidebar/55 p-3 space-y-1 legion-shell-panel">
         <div className="flex items-center justify-between px-2 py-1.5 mb-3">
           <span className="text-xs font-semibold uppercase tracking-[0.16em]">Settings</span>
           <button type="button" onClick={onClose} className="p-1.5 rounded-xl hover:bg-muted transition-colors">
             <XIcon className="h-4 w-4" />
           </button>
         </div>
-        {builtInSections.map((s, i) => (
-          <div key={s.key}>
-            {s.group && (i === 0 || builtInSections[i - 1].group !== s.group) && (
-              <div className="mt-3 mb-1 px-2">
-                <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60">{s.group}</span>
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={() => setActiveSection(s.key)}
-              className={`flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-xs font-medium transition-all ${
-                activeSection === s.key ? 'bg-primary text-primary-foreground shadow-[0_12px_28px_rgba(95,87,196,0.22)]' : 'hover:bg-muted/80 text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              {s.label}
-              <ChevronRightIcon className="ml-auto h-3 w-3 opacity-50" />
-            </button>
-          </div>
+        {primarySections.map((s) => (
+          <button
+            key={s.key}
+            type="button"
+            onClick={() => setActiveSection(s.key)}
+            className={`flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-xs font-medium transition-all ${
+              activeSection === s.key ? 'bg-primary text-primary-foreground shadow-[0_12px_28px_rgba(95,87,196,0.22)]' : 'hover:bg-muted/80 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {s.label}
+            <ChevronRightIcon className="ml-auto h-3 w-3 opacity-50" />
+          </button>
         ))}
+
+        <div className="pt-2">
+          <button
+            type="button"
+            onClick={() => setDaemonNavOpen((open) => !open)}
+            className={`flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-xs font-medium transition-all ${
+              isDaemonSectionActive ? 'bg-primary text-primary-foreground shadow-[0_12px_28px_rgba(95,87,196,0.22)]' : 'hover:bg-muted/80 text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <ServerIcon className="h-3.5 w-3.5" />
+            Daemon
+            {daemonNavOpen ? <ChevronDownIcon className="ml-auto h-3 w-3 opacity-60" /> : <ChevronRightIcon className="ml-auto h-3 w-3 opacity-60" />}
+          </button>
+
+          {daemonNavOpen ? (
+            <div className="mt-1 space-y-1 border-l border-border/60 ml-4 pl-3">
+              {daemonSections.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setActiveSection(s.key)}
+                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-[11px] font-medium transition-all ${
+                    activeSection === s.key ? 'bg-primary/15 text-foreground' : 'hover:bg-muted/70 text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {s.label}
+                  <ChevronRightIcon className="ml-auto h-3 w-3 opacity-40" />
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         {hasPluginSections && (
           <>
             <div className="flex items-center gap-2 pt-3 pb-1 px-1">

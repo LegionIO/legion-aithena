@@ -1,38 +1,19 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { createHmac, randomUUID } from 'crypto';
-import { createInterface } from 'readline';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
 import type { LegionConfig } from '../config/schema.js';
 import type { LLMModelConfig } from './model-catalog.js';
 import type { StreamEvent } from './mastra-agent.js';
-import { LEGION_BRIDGE_SCRIPT } from './legion-bridge-script.js';
 
-export type AgentBackend = 'mastra' | 'legion-embedded' | 'legion-daemon';
+export type AgentBackend = 'mastra' | 'legion-daemon';
 
 type RuntimeMessage = {
   role: string;
   content: unknown;
 };
 
-type EmbeddedBridgeEvent =
-  | { type: 'text-delta'; text?: string }
-  | { type: 'tool-call'; toolCallId?: string; toolName?: string; args?: unknown }
-  | { type: 'tool-result'; toolCallId?: string; toolName?: string; result?: unknown }
-  | { type: 'error'; error?: string }
-  | { type: 'done' }
-  | { type: 'health'; ok?: boolean; status?: string; error?: string };
-
 export type LegionStatus = {
   backend: AgentBackend;
-  embedded: {
-    ok: boolean;
-    status: 'llm_ready' | 'llm_unavailable' | 'settings_error' | 'bridge_error';
-    error?: string;
-    rubyPath?: string;
-    rootPath?: string;
-    configDir?: string;
-  };
   daemon: {
     ok: boolean;
     status: 'ready' | 'not_ready' | 'not_running' | 'request_failed';
@@ -62,11 +43,11 @@ type RuntimeConfig = NonNullable<LegionConfig['runtime']>;
 
 function runtimeConfig(config: LegionConfig): RuntimeConfig {
   const runtime = config.runtime ?? {
-    agentBackend: 'legion-embedded',
+    agentBackend: 'mastra',
     legion: { rootPath: '', configDir: '', daemonUrl: 'http://127.0.0.1:4567', rubyPath: '' },
   };
   return {
-    agentBackend: runtime.agentBackend ?? 'legion-embedded',
+    agentBackend: runtime.agentBackend ?? 'mastra',
     legion: {
       rootPath: runtime.legion?.rootPath ?? '',
       configDir: runtime.legion?.configDir ?? '',
@@ -74,24 +55,6 @@ function runtimeConfig(config: LegionConfig): RuntimeConfig {
       rubyPath: runtime.legion?.rubyPath ?? '',
     },
   };
-}
-
-function resolveLegionRoot(config: LegionConfig): string {
-  const configured = runtimeConfig(config).legion.rootPath.trim();
-  if (configured) return resolve(configured);
-
-  const candidates = legionRootCandidates();
-  const found = candidates.find((candidate) => existsSync(join(candidate, 'lib')));
-  return found ?? '';
-}
-
-function legionRootCandidates(): string[] {
-  return [
-    resolve(process.cwd(), '..', 'LegionIO'),
-    resolve(process.cwd(), '..', 'legionio'),
-    resolve(process.cwd(), 'LegionIO'),
-    resolve(process.cwd(), 'legionio'),
-  ];
 }
 
 type InstalledLegionEnvironment = {
@@ -213,60 +176,6 @@ function rubyPathCandidates(): string[] {
   ].filter(Boolean);
 }
 
-function spawnBridgeProcess(
-  config: LegionConfig,
-  legionHome: string,
-): { child: ChildProcessWithoutNullStreams; rootPath: string; rubyPath: string } {
-  const rootPath = resolveLegionRoot(config);
-  const rubyPath = resolveRubyPath(config);
-  const scriptPath = ensureBridgeScript(legionHome);
-  const hasGemfile = rootPath ? existsSync(join(rootPath, 'Gemfile')) : false;
-  const installed = detectInstalledLegionEnvironment();
-
-  const child = hasGemfile
-    ? spawn('bundle', ['exec', rubyPath, scriptPath], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: rootPath,
-      })
-    : spawn(rubyPath, [scriptPath], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        cwd: process.cwd(),
-        env: installed?.rubyPath === rubyPath ? installed.env : process.env,
-      });
-
-  return { child, rootPath, rubyPath };
-}
-
-function ensureBridgeScript(legionHome: string): string {
-  const dir = join(legionHome, 'cache');
-  mkdirSync(dir, { recursive: true });
-  const scriptPath = join(dir, 'legion-bridge.rb');
-  writeFileSync(scriptPath, LEGION_BRIDGE_SCRIPT, 'utf-8');
-  return scriptPath;
-}
-
-function summarizeEmbeddedError(stderr: string, config: LegionConfig): string {
-  const text = stderr.trim();
-  if (!text) return 'Legion bridge failed.';
-
-  const hints: string[] = [];
-  if (text.includes('/System/Library/Frameworks/Ruby.framework/Versions/2.6')) {
-    hints.push('Legion is using macOS system Ruby 2.6. Set Settings > Models > Agent Runtime > Ruby Path to a managed Ruby 3.4+.');
-  }
-  if (text.includes("Could not find gem 'mysql2'")) {
-    hints.push('Your Legion runtime is falling back to a repo/Bundler install. If you want zero setup, use the Homebrew-installed Legion runtime and leave Ruby Path blank.');
-  }
-  if (text.includes('cannot load such file -- thor')) {
-    hints.push('Run `bundle install` inside your LegionIO repo.');
-  }
-  if (text.includes('ffi') && text.includes('extensions are not built')) {
-    hints.push('Run `gem pristine ffi --version 1.15.5` in the same Ruby environment.');
-  }
-
-  const firstLine = text.split('\n').find((line) => line.trim().length > 0) || text;
-  return hints.length > 0 ? `${firstLine} ${hints.join(' ')}` : firstLine;
-}
-
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -321,100 +230,6 @@ function stringifyValue(value: unknown, maxLength = 2000): string {
     return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
   } catch {
     return String(value);
-  }
-}
-
-async function* streamEmbeddedLegion(options: StreamLegionOptions): AsyncGenerator<StreamEvent> {
-  const { child } = spawnBridgeProcess(options.config, options.legionHome);
-
-  const onAbort = () => {
-    if (!child.killed) child.kill('SIGTERM');
-  };
-  options.abortSignal?.addEventListener('abort', onAbort, { once: true });
-
-  const payload = {
-    type: 'run',
-    rootPath: resolveLegionRoot(options.config),
-    configDir: resolveLegionConfigDir(options.config, options.legionHome),
-    cwd: process.cwd(),
-    extraDirs: [],
-    model: options.modelConfig.modelName,
-    provider: toLegionProvider(options.modelConfig.provider),
-    systemPrompt: options.config.systemPrompt,
-    permissionMode: 'headless',
-    messages: normalizeMessages(options.messages),
-  };
-
-  child.stdin.write(`${JSON.stringify(payload)}\n`);
-  child.stdin.end();
-
-  const stdout = createInterface({ input: child.stdout });
-  let sawDone = false;
-  let stderr = '';
-
-  child.stderr.setEncoding('utf-8');
-  child.stderr.on('data', (chunk: string) => {
-    stderr += chunk;
-  });
-
-  try {
-    for await (const line of stdout) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      let event: EmbeddedBridgeEvent;
-      try {
-        event = JSON.parse(trimmed) as EmbeddedBridgeEvent;
-      } catch {
-        continue;
-      }
-
-      if (event.type === 'text-delta' && event.text) {
-        yield { conversationId: options.conversationId, type: 'text-delta', text: event.text };
-      } else if (event.type === 'tool-call') {
-        yield {
-          conversationId: options.conversationId,
-          type: 'tool-call',
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          args: event.args,
-          startedAt: new Date().toISOString(),
-        };
-      } else if (event.type === 'tool-result') {
-        yield {
-          conversationId: options.conversationId,
-          type: 'tool-result',
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          result: event.result,
-          finishedAt: new Date().toISOString(),
-        };
-      } else if (event.type === 'error') {
-        yield {
-          conversationId: options.conversationId,
-          type: 'error',
-          error: event.error || 'Legion bridge failed.',
-        };
-      } else if (event.type === 'done') {
-        sawDone = true;
-        yield { conversationId: options.conversationId, type: 'done' };
-      }
-    }
-  } finally {
-    options.abortSignal?.removeEventListener('abort', onAbort);
-  }
-
-  const exitCode: number = await new Promise((resolveExit) => {
-    child.once('exit', (code) => resolveExit(code ?? 0));
-  });
-
-  if (!sawDone && !options.abortSignal?.aborted) {
-    if (stderr.trim()) {
-      yield { conversationId: options.conversationId, type: 'error', error: summarizeEmbeddedError(stderr, options.config) };
-    } else if (exitCode !== 0) {
-      yield { conversationId: options.conversationId, type: 'error', error: `Legion bridge exited with code ${exitCode}.` };
-    }
-    yield { conversationId: options.conversationId, type: 'done' };
   }
 }
 
@@ -794,8 +609,9 @@ function toLegionProvider(provider: LLMModelConfig['provider']): string {
   }
 }
 
-export function resolveAgentBackend(config: LegionConfig): AgentBackend {
-  return runtimeConfig(config).agentBackend;
+export async function resolveAgentBackend(config: LegionConfig): Promise<AgentBackend> {
+  const daemon = await runDaemonHealthCheck(config);
+  return daemon.ok ? 'legion-daemon' : 'mastra';
 }
 
 export function detectLegionRuntime(config: LegionConfig, legionHome: string): LegionRuntimeDetection {
@@ -808,78 +624,11 @@ export function detectLegionRuntime(config: LegionConfig, legionHome: string): L
 }
 
 export async function* streamLegionAgent(options: StreamLegionOptions): AsyncGenerator<StreamEvent> {
-  if (resolveAgentBackend(options.config) === 'legion-daemon') {
+  if (await resolveAgentBackend(options.config) === 'legion-daemon') {
     yield* streamDaemonLegion(options);
     return;
   }
-  yield* streamEmbeddedLegion(options);
-}
-
-async function runEmbeddedHealthCheck(config: LegionConfig, legionHome: string): Promise<LegionStatus['embedded']> {
-  return await new Promise((resolveHealth) => {
-    const { child, rootPath, rubyPath } = spawnBridgeProcess(config, legionHome);
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.setEncoding('utf-8');
-    child.stderr.setEncoding('utf-8');
-    child.stdout.on('data', (chunk: string) => { stdout += chunk; });
-    child.stderr.on('data', (chunk: string) => { stderr += chunk; });
-    child.once('exit', () => {
-      const firstLine = stdout.split('\n').find((line) => line.trim().length > 0);
-      if (!firstLine) {
-        resolveHealth({
-          ok: false,
-          status: 'bridge_error',
-          error: stderr.trim() || 'Legion bridge returned no output.',
-          rubyPath,
-          rootPath,
-          configDir: resolveLegionConfigDir(config, legionHome),
-        });
-        return;
-      }
-
-      try {
-        const event = JSON.parse(firstLine) as EmbeddedBridgeEvent;
-        if (event.type !== 'health') {
-          resolveHealth({
-            ok: false,
-            status: 'bridge_error',
-            error: 'Legion bridge returned an unexpected response.',
-            rubyPath,
-            rootPath,
-            configDir: resolveLegionConfigDir(config, legionHome),
-          });
-          return;
-        }
-
-        resolveHealth({
-          ok: Boolean(event.ok),
-          status: event.status === 'llm_ready' ? 'llm_ready' : event.status === 'settings_error' ? 'settings_error' : 'llm_unavailable',
-          error: event.error,
-          rubyPath,
-          rootPath,
-          configDir: resolveLegionConfigDir(config, legionHome),
-        });
-      } catch {
-        resolveHealth({
-          ok: false,
-          status: 'bridge_error',
-          error: stderr.trim() || 'Failed to parse Legion bridge health output.',
-          rubyPath,
-          rootPath,
-          configDir: resolveLegionConfigDir(config, legionHome),
-        });
-      }
-    });
-
-    child.stdin.write(`${JSON.stringify({
-      type: 'health',
-      rootPath: resolveLegionRoot(config),
-      configDir: resolveLegionConfigDir(config, legionHome),
-    })}\n`);
-    child.stdin.end();
-  });
+  throw new Error('Legion runtime should not be used when the daemon is unavailable.');
 }
 
 async function runDaemonHealthCheck(config: LegionConfig): Promise<LegionStatus['daemon']> {
@@ -917,14 +666,11 @@ async function runDaemonHealthCheck(config: LegionConfig): Promise<LegionStatus[
 }
 
 export async function getLegionStatus(config: LegionConfig, legionHome: string): Promise<LegionStatus> {
-  const [embedded, daemon] = await Promise.all([
-    runEmbeddedHealthCheck(config, legionHome),
-    runDaemonHealthCheck(config),
-  ]);
+  void legionHome;
+  const daemon = await runDaemonHealthCheck(config);
 
   return {
-    backend: resolveAgentBackend(config),
-    embedded,
+    backend: daemon.ok ? 'legion-daemon' : 'mastra',
     daemon,
   };
 }

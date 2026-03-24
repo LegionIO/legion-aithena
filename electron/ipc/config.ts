@@ -30,7 +30,7 @@ function getDefaultConfig() {
       catalog: [],
     },
     runtime: {
-      agentBackend: 'legion-embedded' as const,
+      agentBackend: 'mastra' as const,
       legion: {
         rootPath: '',
         configDir: '',
@@ -175,7 +175,7 @@ function getDefaultConfig() {
 function applyRuntimeDefaults(config: LegionConfig, legionHome: string): LegionConfig {
   const detected = detectLegionRuntime(config, legionHome);
   const currentRuntime = config.runtime ?? {
-    agentBackend: 'legion-embedded',
+    agentBackend: 'mastra',
     legion: {
       rootPath: '',
       configDir: '',

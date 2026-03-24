@@ -1,7 +1,6 @@
 import type { IpcMain } from 'electron';
 import { BrowserWindow } from 'electron';
 import { join } from 'path';
-import { readFileSync, existsSync } from 'fs';
 import { resolveModelForThread, resolveModelCatalog, resolveStreamConfig, type ModelCatalogEntry } from '../agent/model-catalog.js';
 import { streamAgentResponse, streamWithFallback } from '../agent/mastra-agent.js';
 import type { StreamEvent, ReasoningEffort } from '../agent/mastra-agent.js';
@@ -216,7 +215,7 @@ export function registerAgentHandlers(ipcMain: IpcMain, legionHome: string): voi
       fallbackEnabled: fallbackEnabled ?? false,
     });
     const modelEntry = streamConfig?.primaryModel ?? null;
-    const backend = resolveAgentBackend(config);
+    const backend = await resolveAgentBackend(config);
     const messageList = messages as Array<{ role?: string; content?: unknown }>;
     console.info(`[Agent:stream] conv=${conversationId} backend=${backend} model=${modelKey ?? config.models.defaultModelKey} profile=${profileKey ?? 'none'} fallback=${fallbackEnabled ? 'on' : 'off'} fallbackModels=${streamConfig?.fallbackModels.length ?? 0} messageCount=${messageList.length}`);
     for (const [index, message] of messageList.entries()) {
@@ -666,12 +665,7 @@ export function registerAgentHandlers(ipcMain: IpcMain, legionHome: string): voi
       return await getLegionStatus(config, legionHome);
     } catch (error) {
       return {
-        backend: 'legion-embedded',
-        embedded: {
-          ok: false,
-          status: 'bridge_error',
-          error: error instanceof Error ? error.message : String(error),
-        },
+        backend: 'mastra',
         daemon: {
           ok: false,
           status: 'request_failed',
