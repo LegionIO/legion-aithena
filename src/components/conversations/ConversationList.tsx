@@ -98,11 +98,42 @@ export const ConversationList: FC<ConversationListProps> = ({
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
 
   const loadConversations = async () => {
     try {
       const list = await legion.conversations.list() as ConversationSummary[];
-      setConversations(list);
+
+      // Detect conversations that were removed since last load (auto-cleanup)
+      // and animate them out before removing from state
+      setConversations((prev) => {
+        const newIds = new Set(list.map((c) => c.id));
+        const vanished = prev.filter((c) => !newIds.has(c.id) && !removingIds.has(c.id));
+
+        if (vanished.length > 0) {
+          // Mark vanished items for animation
+          setRemovingIds((ids) => {
+            const next = new Set(ids);
+            for (const c of vanished) next.add(c.id);
+            return next;
+          });
+          // After animation, remove them from state
+          setTimeout(() => {
+            setRemovingIds((ids) => {
+              const next = new Set(ids);
+              for (const c of vanished) next.delete(c.id);
+              return next;
+            });
+            setConversations((current) =>
+              current.filter((c) => !vanished.some((v) => v.id === c.id)),
+            );
+          }, 300);
+          // Keep old items in list during animation
+          return prev;
+        }
+
+        return list;
+      });
     } catch {
       // IPC not ready
     }
@@ -198,16 +229,22 @@ export const ConversationList: FC<ConversationListProps> = ({
           const isActive = conv.id === activeConversationId;
           const isRunning = conv.runStatus === 'running';
           const hasUnread = conv.hasUnread && !isActive;
+          const isRemoving = removingIds.has(conv.id);
 
           return (
             <div
               key={conv.id}
+              className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                isRemoving ? 'max-h-0 opacity-0 mb-0' : 'max-h-24 opacity-100 mb-1.5'
+              }`}
+            >
+            <div
               role="button"
               tabIndex={0}
               onClick={() => handleClearUnread(conv.id)}
               onKeyDown={(e) => e.key === 'Enter' && handleClearUnread(conv.id)}
               className={`
-                mb-1.5 flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-all group cursor-pointer relative
+                flex w-full items-start gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm transition-all group cursor-pointer relative
                 ${isActive ? 'shadow-[inset_0_0_0_1px_var(--legion-active-item-ring)]' : 'hover:bg-sidebar-accent/65'}
                 ${hasUnread && !isActive ? 'bg-sidebar-accent/45' : ''}
               `}
@@ -231,6 +268,7 @@ export const ConversationList: FC<ConversationListProps> = ({
                   isDeleting={deletingId === conv.id}
                 />
               </div>
+            </div>
             </div>
           );
         })}

@@ -51,7 +51,6 @@ function isDisposableNewConversation(conversation: ConversationRecord | null): b
     && !hasTreeMessages
     && (conversation.messageCount ?? 0) === 0
     && (conversation.userMessageCount ?? 0) === 0
-    && !conversation.lastMessageAt
     && conversation.runStatus === 'idle';
 }
 
@@ -59,6 +58,32 @@ type ConversationsStore = {
   conversations?: Record<string, ConversationRecord>;
   activeConversationId?: string | null;
 };
+
+/**
+ * Delete all empty "New Conversation" entries except the currently active one.
+ * If a conversation list is provided, uses it directly; otherwise fetches from IPC.
+ * Returns the IDs of deleted conversations (for animation).
+ */
+async function cleanupEmptyConversations(
+  activeId?: string | null,
+  existingList?: ConversationRecord[],
+): Promise<string[]> {
+  try {
+    const list = existingList ?? (await legion.conversations.list()) as ConversationRecord[];
+    const disposableIds = list
+      .filter((conv) => conv.id !== activeId && isDisposableNewConversation(conv))
+      .map((conv) => conv.id);
+
+    if (disposableIds.length === 0) return [];
+
+    console.info(`[Conversations] Cleaning up ${disposableIds.length} empty conversations`);
+    await Promise.all(disposableIds.map((id) => legion.conversations.delete(id)));
+    return disposableIds;
+  } catch (err) {
+    console.warn('[Conversations] Cleanup failed:', err);
+    return [];
+  }
+}
 
 function AppShell() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -108,6 +133,9 @@ function AppShell() {
           (list as ConversationRecord[]).map((conversation) => [conversation.id, conversation]),
         );
         applyStore({ activeConversationId: id, conversations });
+
+        // Clean up historical empty conversations on load
+        void cleanupEmptyConversations(id, list as ConversationRecord[]);
       } catch {
         if (!cancelled) {
           setActiveConversationId(null);
@@ -179,6 +207,8 @@ function AppShell() {
     await legion.conversations.setActiveId(id);
     setSettingsOpen(false);
     setActiveConversationId(id);
+    // Clean up any other empty conversations in the background
+    void cleanupEmptyConversations(id);
   }, [cleanupAbandonedConversation]);
 
   const handleNewConversation = useCallback(async () => {
