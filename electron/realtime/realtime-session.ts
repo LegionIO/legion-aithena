@@ -9,6 +9,7 @@
 
 import { BrowserWindow } from 'electron';
 import WebSocket from 'ws';
+import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { LegionConfig } from '../config/schema.js';
 import type { ToolDefinition } from '../tools/types.js';
 
@@ -281,23 +282,29 @@ export class RealtimeSession {
   private sendSessionUpdate(): void {
     if (!this.ws || this.ws.readyState !== WS_OPEN) return;
 
-    const toolDefinitions = this.tools.map((tool) => ({
-      type: 'function' as const,
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.inputSchema
-        ? (typeof (tool.inputSchema as unknown as Record<string, unknown>).shape === 'object'
-            ? { type: 'object', properties: {} } // Zod schema — send minimal spec
-            : tool.inputSchema as unknown)
-        : { type: 'object', properties: {} },
-    }));
+    const toolDefinitions = this.tools.map((tool) => {
+      let parameters: Record<string, unknown> = { type: 'object', properties: {} };
+      if (tool.inputSchema) {
+        const schema = zodToJsonSchema(tool.inputSchema) as Record<string, unknown>;
+        // Remove $schema and additionalProperties — Realtime API doesn't need them
+        delete schema.$schema;
+        delete schema.additionalProperties;
+        parameters = schema;
+      }
+      return {
+        type: 'function' as const,
+        name: tool.name,
+        description: tool.description,
+        parameters,
+      };
+    });
 
     // Add the built-in end_call tool
     toolDefinitions.push({
       type: 'function' as const,
       name: 'end_call',
       description: 'End the current voice call. Use this when the user says goodbye, asks to hang up, or the conversation has naturally concluded. The call will end after your current response finishes.',
-      parameters: { type: 'object', properties: {} } as unknown,
+      parameters: { type: 'object', properties: {} } as Record<string, unknown>,
     });
 
     const sessionConfig: Record<string, unknown> = {

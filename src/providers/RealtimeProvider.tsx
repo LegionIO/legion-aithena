@@ -255,6 +255,30 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
     await endCallInner();
   }, [endCallInner]);
 
+  // Hot-swap output device when config changes mid-call
+  useEffect(() => {
+    if (!callActiveRef.current || !playerRef.current) return;
+    const deviceId = realtimeConfig?.outputDeviceId;
+    console.log('[RealtimeProvider] Output device changed mid-call:', deviceId ?? 'default');
+    void playerRef.current.setOutputDevice(deviceId ?? '');
+  }, [realtimeConfig?.outputDeviceId]);
+
+  // Hot-swap input device when config changes mid-call
+  useEffect(() => {
+    if (!callActiveRef.current) return;
+    const deviceId = realtimeConfig?.inputDeviceId;
+    console.log('[RealtimeProvider] Input device changed mid-call:', deviceId ?? 'default');
+    // Restart mic capture with the new device
+    void (async () => {
+      try {
+        await legion.mic.liveMicStop();
+        await legion.mic.liveMicStart(deviceId);
+      } catch (err) {
+        console.warn('[RealtimeProvider] Failed to swap input device:', err);
+      }
+    })();
+  }, [realtimeConfig?.inputDeviceId]);
+
   // Subscribe to realtime events
   useEffect(() => {
     const unsubscribe = legion.realtime?.onEvent?.((event: unknown) => {
