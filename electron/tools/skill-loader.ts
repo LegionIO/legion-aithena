@@ -5,6 +5,7 @@ import { createWorkflow, createStep } from '@mastra/core/workflows';
 import type { AnyWorkflow } from '@mastra/core/workflows';
 import { registerSkillWorkflow } from '../agent/mastra-instance.js';
 import type { ToolDefinition, ToolExecutionContext } from './types.js';
+import { buildScopedToolName, findToolByName } from './naming.js';
 import type { LegionConfig } from '../config/schema.js';
 import { runCommandWithStreaming, resolveProcessStreamingConfig } from './process-runner.js';
 import { runToolExecution } from './execution.js';
@@ -37,6 +38,10 @@ export type SkillManifest = {
   inputSchema?: Record<string, unknown>;
   execution: SkillExecution;
 };
+
+export function getSkillToolName(skillName: string): string {
+  return buildScopedToolName('skill', skillName);
+}
 
 /* ── Template interpolation ── */
 
@@ -312,7 +317,7 @@ export function skillToWorkflow(
   });
 
   const workflow = createWorkflow({
-    id: `skill:${manifest.name}`,
+    id: getSkillToolName(manifest.name),
     description: manifest.description,
     inputSchema,
     outputSchema,
@@ -341,7 +346,7 @@ function buildCompositeWorkflow(
       execute: async () => ({ error: 'No steps defined in composite skill.' }),
     });
     const wf = createWorkflow({
-      id: `skill:${manifest.name}`,
+      id: getSkillToolName(manifest.name),
       description: manifest.description,
       inputSchema,
       outputSchema,
@@ -359,7 +364,7 @@ function buildCompositeWorkflow(
       outputSchema: anySchema,
       execute: async ({ inputData }) => {
         const prevOutput = (inputData ?? {}) as Record<string, unknown>;
-        const tool = allTools.find((t) => t.name === stepDef.tool);
+        const tool = findToolByName(allTools, stepDef.tool);
         if (!tool) {
           return { error: `Tool "${stepDef.tool}" not found.` };
         }
@@ -390,7 +395,7 @@ function buildCompositeWorkflow(
 
   // Chain steps sequentially via .then()
   let wf: ReturnType<typeof createWorkflow> = createWorkflow({
-    id: `skill:${manifest.name}`,
+    id: getSkillToolName(manifest.name),
     description: manifest.description,
     inputSchema,
     outputSchema,
@@ -416,9 +421,13 @@ export function workflowToToolDefinition(
     : z.object({}).passthrough();
 
   return {
-    name: `skill:${manifest.name}`,
+    name: getSkillToolName(manifest.name),
     description: `[Workflow] ${manifest.description}`,
     inputSchema,
+    source: 'skill',
+    sourceId: manifest.name,
+    originalName: manifest.name,
+    aliases: [`skill:${manifest.name}`],
     execute: async (input, context) => runToolExecution({
       context,
       run: async () => {

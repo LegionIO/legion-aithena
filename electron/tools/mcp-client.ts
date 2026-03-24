@@ -6,6 +6,7 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { z as Z } from 'zod';
 import type { ToolDefinition } from './types.js';
+import { buildScopedToolName } from './naming.js';
 import type { LegionConfig } from '../config/schema.js';
 
 type McpServerConfig = LegionConfig['mcpServers'][number];
@@ -101,9 +102,13 @@ export async function connectMcpServer(server: McpServerConfig): Promise<McpConn
     // Discover tools
     const { tools: mcpTools } = await client.listTools();
     const tools: ToolDefinition[] = mcpTools.map((t) => ({
-      name: `${server.name}:${t.name}`,
+      name: buildScopedToolName('mcp', server.name, t.name),
       description: `[MCP: ${server.name}] ${t.description ?? t.name}`,
       inputSchema: t.inputSchema ? jsonSchemaToZod(t.inputSchema as Record<string, unknown>) : z.object({}),
+      source: 'mcp',
+      sourceId: server.name,
+      originalName: t.name,
+      aliases: [`${server.name}:${t.name}`],
       execute: async (input: unknown) => {
         const result = await client.callTool({ name: t.name, arguments: input as Record<string, unknown> });
         if (result.isError) throw new Error(JSON.stringify(result.content));

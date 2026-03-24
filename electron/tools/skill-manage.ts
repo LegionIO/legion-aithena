@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync
 import { join } from 'path';
 import type { ToolDefinition } from './types.js';
 import type { LegionConfig } from '../config/schema.js';
-import { loadSkillsFromDisk, type SkillManifest } from './skill-loader.js';
+import { getSkillToolName, loadSkillsFromDisk, type SkillManifest } from './skill-loader.js';
 import { readEffectiveConfig, writeDesktopConfig } from '../ipc/config.js';
 
 function readConfig(legionHome: string): LegionConfig {
@@ -22,7 +22,7 @@ export function createSkillManageTool(legionHome: string): ToolDefinition {
       'Manage Legion Aithena skills. Skills are reusable tools stored on disk that persist across sessions.',
       'Actions: "list" shows all skills. "get" reads a skill\'s manifest and files. "create" makes a new skill. "edit" updates one. "delete" removes one. "enable"/"disable" toggles availability.',
       'Skill types: "shell" (runs a command), "script" (runs Node.js), "prompt" (template), "http" (calls an endpoint), "composite" (chains tools).',
-      'Created skills are immediately available as tools prefixed with "skill:" (e.g., "skill:deploy-status").',
+      `Created skills are immediately available as tools named like "${getSkillToolName('deploy-status')}".`,
     ].join(' '),
     inputSchema: z.object({
       action: z.enum(['list', 'get', 'create', 'edit', 'delete', 'enable', 'disable']).describe('The action to perform'),
@@ -149,7 +149,7 @@ export function createSkillManageTool(legionHome: string): ToolDefinition {
             success: true,
             created: manifest,
             dir: skillDir,
-            note: `Skill "${name}" created. It will be available as tool "skill:${name}" on your next turn.`,
+            note: `Skill "${name}" created. It will be available as tool "${getSkillToolName(name)}" on your next turn.`,
           };
         }
 

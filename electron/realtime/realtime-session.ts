@@ -11,6 +11,7 @@ import { BrowserWindow } from 'electron';
 import WebSocket from 'ws';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { LegionConfig } from '../config/schema.js';
+import { findToolByName } from '../tools/naming.js';
 import type { ToolDefinition } from '../tools/types.js';
 
 /* ── Types ── */
@@ -64,6 +65,9 @@ export class RealtimeSession {
   private _inResponse = false;
   private functionCallBuffers: Map<string, { name: string; args: string; itemId: string; callId: string }> = new Map();
 
+  /** Pre-built memory context to inject into session instructions */
+  private memoryContext: string = '';
+
   /** Track partial transcripts keyed by item_id */
   private userTranscriptBuffers: Map<string, string> = new Map();
   private assistantTranscriptBuffers: Map<string, string> = new Map();
@@ -83,13 +87,14 @@ export class RealtimeSession {
 
   /* ── Public API ── */
 
-  async start(conversationId: string): Promise<void> {
+  async start(conversationId: string, memoryContext?: string): Promise<void> {
     if (this.ws) {
       this.close();
     }
 
     this.conversationId = conversationId;
     this.config = this.getFullConfig().realtime;
+    this.memoryContext = memoryContext ?? '';
     this.pendingToolCalls.clear();
     this.functionCallBuffers.clear();
     this.userTranscriptBuffers.clear();
@@ -307,11 +312,22 @@ export class RealtimeSession {
       parameters: { type: 'object', properties: {} } as Record<string, unknown>,
     });
 
+    // Compose instructions from config + memory context
+    const instructionParts = [
+      this.config.instructions || '',
+      this.memoryContext || '',
+    ].filter(Boolean);
+    const composedInstructions = instructionParts.length > 0
+      ? instructionParts.join('\n\n')
+      : undefined;
+
+    console.info(`[RealtimeSession] Instructions composition: configInstructions=${(this.config.instructions || '').length} chars, memoryContext=${this.memoryContext.length} chars, composed=${composedInstructions?.length ?? 0} chars`);
+
     const sessionConfig: Record<string, unknown> = {
       type: 'session.update',
       session: {
         modalities: ['text', 'audio'],
-        instructions: this.config.instructions || undefined,
+        instructions: composedInstructions,
         voice: this.config.voice || 'alloy',
         input_audio_format: 'pcm16',
         output_audio_format: 'pcm16',
@@ -330,7 +346,8 @@ export class RealtimeSession {
       },
     };
 
-    console.info('[RealtimeSession] Sending session.update:', JSON.stringify(sessionConfig, null, 2));
+    console.info('[RealtimeSession] Sending session.update with', toolDefinitions.length, 'tools');
+    console.info('[RealtimeSession] Instructions preview:', composedInstructions?.slice(0, 500) ?? '(none)');
     this.ws.send(JSON.stringify(sessionConfig));
   }
 
@@ -537,7 +554,7 @@ export class RealtimeSession {
       return;
     }
 
-    const tool = this.tools.find((t) => t.name === toolName);
+    const tool = findToolByName(this.tools, toolName);
 
     if (!tool) {
       const errorResult = { error: `Unknown tool: ${toolName}` };

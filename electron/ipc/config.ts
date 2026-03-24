@@ -129,6 +129,14 @@ function getDefaultConfig() {
       turnDetection: { type: 'server_vad' as const, threshold: 0.5, silenceDurationMs: 500 },
       inputAudioTranscription: true,
       autoEndCall: { enabled: true, silenceTimeoutSec: 60 },
+      memoryContext: {
+        enabled: true,
+        maxTokens: 8000,
+        conversationHistory: { enabled: true, maxMessages: 20 },
+        workingMemory: { enabled: true },
+        semanticRecall: { enabled: false, topK: 3 },
+        observationalMemory: { enabled: true },
+      },
     },
     advanced: {
       temperature: 0.4,

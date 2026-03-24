@@ -19,10 +19,11 @@ import {
 import { legion } from '@/lib/ipc-client';
 import { useConfig } from './ConfigProvider';
 import { RealtimeAudioPlayer } from '@/lib/audio/realtime-playback';
+import { Ringtone } from '@/lib/audio/ringtone';
 
 /* ── Types ── */
 
-export type RealtimeCallStatus = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+export type RealtimeCallStatus = 'idle' | 'preparing' | 'connecting' | 'connected' | 'disconnected' | 'error';
 
 export type RealtimeCallState = {
   isInCall: boolean;
@@ -69,6 +70,8 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
   const [outputLevel, setOutputLevel] = useState(0);
 
   const playerRef = useRef<RealtimeAudioPlayer | null>(null);
+  const ringtoneRef = useRef<Ringtone | null>(null);
+  const ringDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micDrainTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -87,6 +90,16 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
   // Cleanup function for ending a call
   const cleanup = useCallback(() => {
     callActiveRef.current = false;
+
+    // Stop ringtone
+    if (ringDelayTimerRef.current) {
+      clearTimeout(ringDelayTimerRef.current);
+      ringDelayTimerRef.current = null;
+    }
+    if (ringtoneRef.current) {
+      ringtoneRef.current.destroy();
+      ringtoneRef.current = null;
+    }
 
     // Stop mic drain polling
     if (micDrainTimerRef.current) {
@@ -128,9 +141,10 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
   const startCall = useCallback(async (conversationId: string) => {
     if (callActiveRef.current) return;
 
+    // Start in "preparing" (ringing) state — memory is being gathered
     setCallState({
       isInCall: true,
-      status: 'connecting',
+      status: 'preparing',
       isSpeaking: false,
       isResponding: false,
       duration: 0,
@@ -142,8 +156,26 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
       await player.init(realtimeConfig?.outputDeviceId);
       playerRef.current = player;
 
-      // Start the realtime session
+      // Start ringtone after 1 second if still preparing
+      ringDelayTimerRef.current = setTimeout(() => {
+        const tone = new Ringtone();
+        ringtoneRef.current = tone;
+        void tone.start(realtimeConfig?.outputDeviceId);
+      }, 1000);
+
+      // Start the realtime session (includes memory gathering — the "ringing" phase)
       const result = await legion.realtime.startSession(conversationId);
+
+      // Stop the ringtone
+      if (ringDelayTimerRef.current) {
+        clearTimeout(ringDelayTimerRef.current);
+        ringDelayTimerRef.current = null;
+      }
+      if (ringtoneRef.current) {
+        ringtoneRef.current.destroy();
+        ringtoneRef.current = null;
+      }
+
       if (result.error) {
         throw new Error(result.error);
       }
@@ -293,7 +325,7 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
             ...prev,
             status,
             error,
-            isInCall: status === 'connected' || status === 'connecting',
+            isInCall: status === 'connected' || status === 'connecting' || prev.status === 'preparing',
           }));
           if (status === 'disconnected' || status === 'error') {
             cleanup();

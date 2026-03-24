@@ -43,6 +43,14 @@ function StatusDot({ status }: { status: string }) {
       </span>
     );
   }
+  if (status === 'preparing') {
+    return (
+      <span className="relative flex h-2.5 w-2.5">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
+        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-violet-500" />
+      </span>
+    );
+  }
   if (status === 'connecting') {
     return (
       <span className="relative flex h-2.5 w-2.5">
@@ -185,7 +193,7 @@ export const CallOverlay: FC = () => {
             <div className="flex items-center gap-2.5">
               <StatusDot status={callState.status} />
               <span className="text-xs font-medium capitalize text-muted-foreground">
-                {callState.status === 'connected' ? 'Connected' : callState.status === 'connecting' ? 'Connecting...' : callState.status}
+                {callState.status === 'connected' ? 'Connected' : callState.status === 'preparing' ? 'Ringing...' : callState.status === 'connecting' ? 'Connecting...' : callState.status}
               </span>
             </div>
             <div className="flex items-center gap-4">

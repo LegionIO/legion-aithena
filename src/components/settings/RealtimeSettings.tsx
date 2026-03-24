@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, type FC } from 'react';
 import { EyeIcon, EyeOffIcon, WifiIcon, WifiOffIcon, LoaderIcon } from 'lucide-react';
 import type { SettingsProps } from './shared';
-import { Toggle, SliderField, settingsSelectClass } from './shared';
+import { Toggle, SliderField, NumberField, settingsSelectClass } from './shared';
 import { legion } from '@/lib/ipc-client';
 
 type RealtimeProvider = 'openai' | 'azure' | 'custom';
@@ -20,6 +20,14 @@ type RealtimeConfig = {
   inputDeviceId?: string;
   outputDeviceId?: string;
   autoEndCall?: { enabled?: boolean; silenceTimeoutSec?: number };
+  memoryContext?: {
+    enabled?: boolean;
+    maxTokens?: number;
+    conversationHistory?: { enabled?: boolean; maxMessages?: number };
+    workingMemory?: { enabled?: boolean };
+    semanticRecall?: { enabled?: boolean; topK?: number };
+    observationalMemory?: { enabled?: boolean };
+  };
 };
 
 // ─── Password Field ──────────────────────────────────────────────────────────
@@ -154,6 +162,7 @@ export const RealtimeSettings: FC<SettingsProps> = ({ config, updateConfig }) =>
   const provider: RealtimeProvider = realtime?.provider ?? 'openai';
   const turnDetectionType = realtime?.turnDetection?.type ?? 'server_vad';
   const autoEndCall = realtime?.autoEndCall;
+  const memoryCtx = realtime?.memoryContext;
 
   return (
     <div className="space-y-6">
@@ -334,6 +343,87 @@ export const RealtimeSettings: FC<SettingsProps> = ({ config, updateConfig }) =>
             rows={4}
           />
         </div>
+      </div>
+
+      {/* ── Memory Context ── */}
+      <div className="space-y-3 border-t border-border/50 pt-4">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Memory Context</h4>
+        <p className="text-[10px] text-muted-foreground/60">
+          Include conversation memory in the call context so the AI has awareness of prior messages,
+          user preferences, and relevant history. Uses part of the 32k context budget.
+        </p>
+
+        <Toggle
+          label="Include conversation memory in call context"
+          checked={memoryCtx?.enabled ?? true}
+          onChange={(v) => updateConfig('realtime.memoryContext.enabled', v)}
+        />
+
+        {(memoryCtx?.enabled ?? true) && (
+          <div className="space-y-4 pl-1">
+            <SliderField
+              label={`Memory budget: ${memoryCtx?.maxTokens ?? 8000} tokens`}
+              value={memoryCtx?.maxTokens ?? 8000}
+              min={2000}
+              max={16000}
+              step={500}
+              onChange={(v) => updateConfig('realtime.memoryContext.maxTokens', v)}
+            />
+
+            <div className="space-y-3 rounded-xl border border-border/50 bg-card/40 p-3">
+              <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Memory Types</h4>
+
+              <Toggle
+                label="Recent conversation history"
+                checked={memoryCtx?.conversationHistory?.enabled ?? true}
+                onChange={(v) => updateConfig('realtime.memoryContext.conversationHistory.enabled', v)}
+              />
+              {(memoryCtx?.conversationHistory?.enabled ?? true) && (
+                <div className="pl-4">
+                  <NumberField
+                    label="Max messages"
+                    value={memoryCtx?.conversationHistory?.maxMessages ?? 20}
+                    min={1}
+                    max={100}
+                    onChange={(v) => updateConfig('realtime.memoryContext.conversationHistory.maxMessages', v)}
+                  />
+                </div>
+              )}
+
+              <Toggle
+                label="Working memory"
+                checked={memoryCtx?.workingMemory?.enabled ?? true}
+                onChange={(v) => updateConfig('realtime.memoryContext.workingMemory.enabled', v)}
+              />
+
+              <Toggle
+                label="Semantic recall"
+                checked={memoryCtx?.semanticRecall?.enabled ?? false}
+                onChange={(v) => updateConfig('realtime.memoryContext.semanticRecall.enabled', v)}
+              />
+              {(memoryCtx?.semanticRecall?.enabled ?? false) && (
+                <div className="pl-4">
+                  <NumberField
+                    label="Top K results"
+                    value={memoryCtx?.semanticRecall?.topK ?? 3}
+                    min={1}
+                    max={10}
+                    onChange={(v) => updateConfig('realtime.memoryContext.semanticRecall.topK', v)}
+                  />
+                  <span className="text-[10px] text-muted-foreground/60 mt-0.5 block">
+                    Adds latency at call start (embedding + vector search).
+                  </span>
+                </div>
+              )}
+
+              <Toggle
+                label="Observational memory"
+                checked={memoryCtx?.observationalMemory?.enabled ?? true}
+                onChange={(v) => updateConfig('realtime.memoryContext.observationalMemory.enabled', v)}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Turn Detection ── */}

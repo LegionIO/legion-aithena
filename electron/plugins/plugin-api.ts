@@ -1,6 +1,7 @@
 import { shell, BrowserWindow } from 'electron';
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'http';
 import { URL } from 'url';
+import { z } from 'zod';
 import type {
   PluginAPI,
   PluginInstance,
@@ -16,6 +17,8 @@ import type {
 } from './types.js';
 import type { LegionConfig } from '../config/schema.js';
 import type { ToolDefinition } from '../tools/types.js';
+import { buildScopedToolName, getScopedToolPrefix } from '../tools/naming.js';
+import { convertJsonSchemaToZod } from '../tools/skill-loader.js';
 
 type PluginAPICallbacks = {
   getConfig: () => LegionConfig;
@@ -24,6 +27,46 @@ type PluginAPICallbacks = {
   onToolsChanged: () => void;
   registerActionHandler: (targetId: string, handler: (action: string, data?: unknown) => void | Promise<void>) => void;
 };
+
+function isZodSchema(schema: unknown): schema is z.ZodTypeAny {
+  return Boolean(
+    schema
+    && typeof schema === 'object'
+    && typeof (schema as { safeParse?: unknown }).safeParse === 'function',
+  );
+}
+
+function normalizePluginTool(tool: ToolDefinition): ToolDefinition {
+  const rawSchema = tool.inputSchema as unknown;
+  const inputSchema = isZodSchema(rawSchema)
+    ? rawSchema
+    : rawSchema && typeof rawSchema === 'object'
+      ? convertJsonSchemaToZod(rawSchema as Record<string, unknown>)
+      : z.object({}).passthrough();
+
+  return {
+    ...tool,
+    inputSchema,
+  };
+}
+
+function resolvePluginToolOriginalName(pluginName: string, tool: ToolDefinition): string {
+  if (tool.source === 'plugin' && tool.sourceId === pluginName && tool.originalName) {
+    return tool.originalName;
+  }
+
+  const legacyPrefix = `plugin:${pluginName}:`;
+  if (tool.name.startsWith(legacyPrefix)) {
+    return tool.name.slice(legacyPrefix.length);
+  }
+
+  const safePrefix = getScopedToolPrefix('plugin', pluginName);
+  if (tool.name.startsWith(safePrefix)) {
+    return tool.name.slice(safePrefix.length);
+  }
+
+  return tool.originalName ?? tool.name;
+}
 
 export function createPluginAPI(
   instance: PluginInstance,
@@ -68,27 +111,44 @@ export function createPluginAPI(
 
     tools: {
       register: (tools: ToolDefinition[]) => {
-        // Prefix tool names with plugin:<name>:
-        const prefixed = tools.map((tool) => ({
-          ...tool,
-          name: tool.name.startsWith(`plugin:${manifest.name}:`)
-            ? tool.name
-            : `plugin:${manifest.name}:${tool.name}`,
-        }));
+        const prefixed = tools.map((tool) => normalizePluginTool(tool)).map((tool) => {
+          const originalName = resolvePluginToolOriginalName(manifest.name, tool);
+
+          return {
+            ...tool,
+            name: buildScopedToolName('plugin', manifest.name, originalName),
+            source: 'plugin' as const,
+            sourceId: manifest.name,
+            originalName,
+            aliases: Array.from(new Set([
+              ...(tool.aliases ?? []),
+              tool.name,
+              `plugin:${manifest.name}:${originalName}`,
+            ])),
+          };
+        });
+        const newNames = new Set(prefixed.map((tool) => tool.name));
+        instance.registeredTools = instance.registeredTools.filter((tool) => !newNames.has(tool.name));
         instance.registeredTools.push(...prefixed);
         callbacks.onToolsChanged();
       },
 
       unregister: (toolNames: string[]) => {
         const fullNames = new Set(
-          toolNames.map((name) =>
-            name.startsWith(`plugin:${manifest.name}:`)
-              ? name
-              : `plugin:${manifest.name}:${name}`,
-          ),
+          toolNames.flatMap((name) => {
+            const originalName = name.startsWith(`plugin:${manifest.name}:`)
+              ? name.slice(`plugin:${manifest.name}:`.length)
+              : name;
+
+            return [
+              name,
+              `plugin:${manifest.name}:${originalName}`,
+              buildScopedToolName('plugin', manifest.name, originalName),
+            ];
+          }),
         );
         instance.registeredTools = instance.registeredTools.filter(
-          (t) => !fullNames.has(t.name),
+          (t) => !fullNames.has(t.name) && !(t.aliases?.some((alias) => fullNames.has(alias))),
         );
         callbacks.onToolsChanged();
       },

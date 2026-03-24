@@ -215,6 +215,20 @@ const realtimeConfigSchema = z.object({
     enabled: z.boolean().optional(),
     silenceTimeoutSec: z.number().positive().optional(),
   }).optional(),
+  memoryContext: z.object({
+    enabled: z.boolean(),
+    maxTokens: z.number().positive(),
+    conversationHistory: z.object({
+      enabled: z.boolean(),
+      maxMessages: z.number().nonnegative(),
+    }),
+    workingMemory: z.object({ enabled: z.boolean() }),
+    semanticRecall: z.object({
+      enabled: z.boolean(),
+      topK: z.number().positive(),
+    }),
+    observationalMemory: z.object({ enabled: z.boolean() }),
+  }).optional(),
 });
 
 export const legionConfigSchema = z.object({

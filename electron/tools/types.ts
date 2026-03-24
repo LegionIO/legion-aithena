@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 
+export type ToolSource = 'builtin' | 'mcp' | 'skill' | 'plugin';
+
 export type ToolProgressEvent = {
   stream: 'stdout' | 'stderr';
   delta: string;
@@ -21,4 +23,8 @@ export type ToolDefinition = {
   description: string;
   inputSchema: z.ZodTypeAny;
   execute: (input: unknown, context: ToolExecutionContext) => Promise<unknown>;
+  source?: ToolSource;
+  sourceId?: string;
+  originalName?: string;
+  aliases?: string[];
 };

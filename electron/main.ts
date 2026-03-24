@@ -3,7 +3,7 @@ import { join } from 'path';
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { homedir } from 'os';
 import { readEffectiveConfig, registerConfigHandlers } from './ipc/config.js';
-import { registerAgentHandlers, registerTools, updateMcpTools, updateSkillTools, updatePluginTools } from './ipc/agent.js';
+import { registerAgentHandlers, registerTools, updateMcpTools, updateSkillTools, updatePluginTools, getRegisteredTools } from './ipc/agent.js';
 import { registerConversationHandlers } from './ipc/conversations.js';
 import { buildToolRegistry } from './tools/registry.js';
 import { registerMcpHandlers } from './ipc/mcp.js';
@@ -15,7 +15,7 @@ import { PluginManager } from './plugins/plugin-manager.js';
 import { registerPluginHandlers } from './ipc/plugins.js';
 import { registerMicRecorderHandlers, cleanupMicRecorder } from './audio/mic-recorder.js';
 import { registerLiveSttHandlers } from './audio/live-stt.js';
-import { registerRealtimeHandlers } from './ipc/realtime.js';
+import { registerRealtimeHandlers, updateActiveRealtimeSessionTools } from './ipc/realtime.js';
 import type { LegionConfig } from './config/schema.js';
 
 const LEGION_HOME = join(homedir(), '.legionio');
@@ -307,6 +307,9 @@ app.whenReady().then(() => {
   // Track last mcpServers fingerprint to detect changes
   let lastMcpFingerprint = JSON.stringify(getConfig().mcpServers ?? []);
   let lastSkillsFingerprint = JSON.stringify(getConfig().skills?.enabled ?? []);
+  const syncRealtimeTools = (): void => {
+    updateActiveRealtimeSessionTools(getRegisteredTools());
+  };
 
   const handleConfigChanged = (config: LegionConfig) => {
     // MCP hot-reload
@@ -316,6 +319,7 @@ app.whenReady().then(() => {
       console.info('[Legion] MCP servers changed, rebuilding...');
       rebuildMcpTools(config.mcpServers ?? []).then((mcpTools) => {
         updateMcpTools(mcpTools);
+        syncRealtimeTools();
         console.info(`[Legion] MCP hot-reload complete: ${mcpTools.length} MCP tools`);
       }).catch((err) => {
         console.error('[Legion] MCP hot-reload failed:', err);
@@ -329,6 +333,7 @@ app.whenReady().then(() => {
       const skillsDir = config.skills?.directory || join(LEGION_HOME, 'skills');
       const skillTools = loadSkillsAsTools(skillsDir, config.skills?.enabled ?? [], getConfig);
       updateSkillTools(skillTools);
+      syncRealtimeTools();
       console.info(`[Legion] Skills hot-reload complete: ${skillTools.length} skill tools`);
     }
 
@@ -356,16 +361,17 @@ app.whenReady().then(() => {
   registerPluginHandlers(ipcMain, pluginManager);
   pluginManagerRef = pluginManager;
 
+  // Listen for plugin tool changes before plugin activation so early registrations are not missed
+  pluginManager.onToolsChanged((pluginTools) => {
+    updatePluginTools(pluginTools);
+    syncRealtimeTools();
+  });
+
   // Load plugins (async — required plugins will show blocking modals when renderer loads)
   pluginManager.loadAll().then(() => {
     console.info(`[Legion] ${pluginManager.getPluginCount()} plugins loaded`);
   }).catch((err) => {
     console.error('[Legion] Plugin loading failed:', err);
-  });
-
-  // Listen for plugin tool changes
-  pluginManager.onToolsChanged((pluginTools) => {
-    updatePluginTools(pluginTools);
   });
 
   // File dialog handler
@@ -458,7 +464,7 @@ app.whenReady().then(() => {
     console.info(`[Legion] ${tools.length} tools + ${pluginTools.length} plugin tools registered`);
 
     // Register realtime handlers (needs tool registry)
-    registerRealtimeHandlers(ipcMain, getConfig, () => allTools);
+    registerRealtimeHandlers(ipcMain, getConfig, getRegisteredTools, LEGION_HOME);
   }).catch((err) => {
     console.error('[Legion] Failed to build tool registry:', err);
   });

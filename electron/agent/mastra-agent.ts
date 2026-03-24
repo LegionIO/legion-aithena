@@ -168,6 +168,20 @@ function buildProviderOptions(
   };
 }
 
+function buildMastraMemoryOptions(
+  conversationId: string,
+  memory: ReturnType<typeof getSharedMemory>,
+): Record<string, unknown> | undefined {
+  if (!memory) return undefined;
+
+  return {
+    memory: {
+      thread: { id: conversationId },
+      resource: getResourceId(),
+    },
+  };
+}
+
 export async function* streamAgentResponse(
   conversationId: string,
   messages: unknown[],
@@ -245,18 +259,14 @@ async function* generateWithSyntheticEvents(
   try {
     const msgArr = messages as Array<{ role?: string }>;
     console.info(`[Agent:generate] conv=${conversationId} messageCount=${msgArr.length} roles=[${msgArr.map((m) => m.role ?? '?').join(',')}] maxSteps=${config.advanced.maxSteps} temp=${config.advanced.temperature}`);
+    const memoryOptions = buildMastraMemoryOptions(conversationId, memory);
 
     const result = await agent.generate(messages as Parameters<typeof agent.generate>[0], {
       maxSteps: config.advanced.maxSteps,
       abortSignal: options?.abortSignal,
       ...(Object.keys(modelSettings).length > 0 ? { modelSettings } : {}),
       ...(providerOptions ? { providerOptions } : {}),
-      ...(memory
-        ? {
-            threadId: conversationId,
-            resourceId: getResourceId(),
-          }
-        : {}),
+      ...(memoryOptions ?? {}),
       onStepFinish: (step: unknown) => {
         const s = step as {
           text?: string;
@@ -360,18 +370,14 @@ async function* streamWithRealEvents(
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       console.info(`[Agent] Starting stream for ${conversationId}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
+      const memoryOptions = buildMastraMemoryOptions(conversationId, memory);
 
       const streamResult = await agent.stream(messages as Parameters<typeof agent.stream>[0], {
         maxSteps: config.advanced.maxSteps,
         abortSignal: options?.abortSignal,
         ...(Object.keys(modelSettings).length > 0 ? { modelSettings } : {}),
         ...(providerOptions ? { providerOptions } : {}),
-        ...(memory
-          ? {
-              threadId: conversationId,
-              resourceId: getResourceId(),
-            }
-          : {}),
+        ...(memoryOptions ?? {}),
       } as any);
 
       const fullStream = streamResult.fullStream;

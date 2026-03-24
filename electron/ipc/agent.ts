@@ -10,6 +10,7 @@ import type { LegionConfig } from '../config/schema.js';
 import { readEffectiveConfig } from './config.js';
 import { shouldCompact, compactConversationPrefix } from '../agent/compaction.js';
 import type { ToolDefinition, ToolExecutionContext } from '../tools/types.js';
+import { ensureSafeToolDefinitions, findToolByName } from '../tools/naming.js';
 import {
   ToolObserverManager,
   resolveToolObserverConfig,
@@ -147,26 +148,29 @@ function isRetryableTitleGenerationError(error: unknown): boolean {
 let registeredTools: ToolDefinition[] = [];
 
 export function registerTools(tools: ToolDefinition[]): void {
-  registeredTools = tools;
+  registeredTools = ensureSafeToolDefinitions(tools);
+}
+
+export function getRegisteredTools(): ToolDefinition[] {
+  return registeredTools;
 }
 
 /** Hot-swap MCP tools without touching built-in, skill, or plugin tools */
 export function updateMcpTools(mcpTools: ToolDefinition[]): void {
-  // MCP tool names contain ':' but NOT 'skill:' or 'plugin:' prefix
-  const nonMcp = registeredTools.filter((t) => !t.name.includes(':') || t.name.startsWith('skill:') || t.name.startsWith('plugin:'));
-  registeredTools = [...nonMcp, ...mcpTools];
+  const nonMcp = registeredTools.filter((t) => t.source !== 'mcp');
+  registeredTools = [...nonMcp, ...ensureSafeToolDefinitions(mcpTools)];
 }
 
 /** Hot-swap skill tools without touching built-in or MCP tools */
 export function updateSkillTools(skillTools: ToolDefinition[]): void {
-  const nonSkill = registeredTools.filter((t) => !t.name.startsWith('skill:'));
-  registeredTools = [...nonSkill, ...skillTools];
+  const nonSkill = registeredTools.filter((t) => t.source !== 'skill');
+  registeredTools = [...nonSkill, ...ensureSafeToolDefinitions(skillTools)];
 }
 
 /** Hot-swap plugin tools without touching built-in, MCP, or skill tools */
 export function updatePluginTools(pluginTools: ToolDefinition[]): void {
-  const nonPlugin = registeredTools.filter((t) => !t.name.startsWith('plugin:'));
-  registeredTools = [...nonPlugin, ...pluginTools];
+  const nonPlugin = registeredTools.filter((t) => t.source !== 'plugin');
+  registeredTools = [...nonPlugin, ...ensureSafeToolDefinitions(pluginTools)];
 }
 
 export function registerAgentHandlers(ipcMain: IpcMain, legionHome: string): void {
@@ -296,7 +300,7 @@ export function registerAgentHandlers(ipcMain: IpcMain, legionHome: string): voi
           return { ok: false, details: 'Thread run is already cancelled.' };
         }
 
-        const tool = registeredTools.find((t) => t.name === toolName);
+        const tool = findToolByName(registeredTools, toolName);
         if (!tool) {
           return { ok: false, details: `Tool "${toolName}" is not registered.` };
         }

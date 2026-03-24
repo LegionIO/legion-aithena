@@ -142,10 +142,12 @@ export class PluginManager {
       }
 
       instance.state = 'active';
+      this.notifyToolsChanged();
       console.info(`[PluginManager] Plugin "${manifest.name}" activated (priority=${manifest.priority}, required=${manifest.required})`);
     } catch (err) {
       instance.state = 'error';
       instance.error = err instanceof Error ? err.message : String(err);
+      this.notifyToolsChanged();
       console.error(`[PluginManager] Failed to load plugin "${manifest.name}":`, err);
     }
   }
@@ -175,6 +177,7 @@ export class PluginManager {
     this.plugins.clear();
     this.pluginAPIs.clear();
     this.actionHandlers.clear();
+    this.notifyToolsChanged();
   }
 
   /* ── Config Change Forwarding ── */
@@ -214,6 +217,7 @@ export class PluginManager {
 
   onToolsChanged(callback: (tools: ToolDefinition[]) => void): void {
     this.toolChangeCallback = callback;
+    callback(this.getAllPluginTools());
   }
 
   private notifyToolsChanged(): void {
