@@ -206,7 +206,10 @@ export async function buildToolRegistry(getConfig: () => LegionConfig, legionHom
     tools.push(createSkillManageTool(legionHome));
   }
 
-  if (legionHome && config.computerUse?.enabled !== false) {
+  const cuSurface = config.computerUse?.toolSurface ?? 'both';
+  const cuEnabledForChat = config.computerUse?.enabled !== false && (cuSurface === 'both' || cuSurface === 'only-chat');
+
+  if (legionHome && cuEnabledForChat) {
     const manager = getComputerUseManager(legionHome, getConfig);
     tools.push({
       name: 'computer_use_session',
@@ -446,12 +449,12 @@ export async function buildToolRegistry(getConfig: () => LegionConfig, legionHom
         if (!targetSessionId) return { isError: true, error: 'No computer-use session found for this conversation.' };
 
         // Try sending guidance first (works for active sessions)
-        const guidanceResult = manager.sendGuidance(targetSessionId, payload.message);
+        const guidanceResult = await manager.sendGuidance(targetSessionId, payload.message);
         if (guidanceResult) {
           return {
             sessionId: guidanceResult.id,
             status: guidanceResult.status,
-            action: 'guidance_queued',
+            action: guidanceResult.status === 'running' ? 'guidance_queued_and_resumed' : 'guidance_queued',
             pendingGuidanceCount: (guidanceResult.guidanceMessages ?? []).filter((m) => !m.injectedAt).length,
           };
         }

@@ -67,6 +67,9 @@ export type LocalMacosHelperResponse = {
   desktopHeight?: number;
   pointerX?: number;
   pointerY?: number;
+  imageBase64?: string;
+  width?: number;
+  height?: number;
   error?: string;
 };
 

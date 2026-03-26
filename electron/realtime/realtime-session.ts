@@ -413,7 +413,13 @@ export class RealtimeSession {
   private sendSessionUpdate(): void {
     if (!this.ws || this.ws.readyState !== WS_OPEN) return;
 
-    const toolDefinitions = this.tools.map((tool) => {
+    const cuSurface = this.getFullConfig().computerUse?.toolSurface ?? 'both';
+    const cuEnabledForCalls = cuSurface === 'both' || cuSurface === 'only-calls';
+    const effectiveTools = cuEnabledForCalls
+      ? this.tools
+      : this.tools.filter((t) => !t.name.startsWith('computer_use_'));
+
+    const toolDefinitions = effectiveTools.map((tool) => {
       let parameters: Record<string, unknown> = { type: 'object', properties: {} };
       if (tool.inputSchema) {
         const schema = zodToJsonSchema(tool.inputSchema) as Record<string, unknown>;

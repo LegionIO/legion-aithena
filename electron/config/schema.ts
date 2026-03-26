@@ -14,6 +14,8 @@ const computerUseSurfaceSchema = z.enum(['docked', 'window']);
 
 const computerUseApprovalModeSchema = z.enum(['step', 'goal', 'autonomous']);
 
+const computerUseToolSurfaceSchema = z.enum(['both', 'only-calls', 'only-chat', 'none']);
+
 const providerSchema = z.object({
   type: z.enum(['openai-compatible', 'anthropic', 'amazon-bedrock', 'google']),
   enabled: z.boolean().optional(),
@@ -197,6 +199,7 @@ const fallbackConfigSchema = z.object({
 const computerUseConfigSchema = z.object({
   enabled: z.boolean(),
   showStepLog: z.boolean(),
+  toolSurface: computerUseToolSurfaceSchema,
   defaultSurface: computerUseSurfaceSchema,
   defaultTarget: computerUseTargetSchema,
   approvalModeDefault: computerUseApprovalModeSchema,
@@ -230,6 +233,7 @@ const computerUseConfigSchema = z.object({
     deniedApps: z.array(z.string()),
     allowedDisplays: z.array(z.string()),
     redactApps: z.array(z.string()),
+    captureExcludedApps: z.array(z.string()),
   }),
   isolated: z.object({
     browserProfileDir: z.string(),
