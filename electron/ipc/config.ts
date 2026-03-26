@@ -163,6 +163,7 @@ function getDefaultConfig() {
     computerUse: {
       enabled: true,
       showStepLog: true,
+      toolSurface: 'both' as const,
       defaultSurface: 'docked' as const,
       defaultTarget: 'isolated-browser' as const,
       approvalModeDefault: 'step' as const,

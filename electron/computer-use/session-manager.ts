@@ -655,11 +655,13 @@ export class ComputerUseSessionManager extends EventEmitter {
     return next;
   }
 
-  sendGuidance(sessionId: string, text: string): ComputerSession | null {
+  async sendGuidance(sessionId: string, text: string): Promise<ComputerSession | null> {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
     // Don't accept guidance for terminal sessions
     if (session.status === 'completed' || session.status === 'stopped' || session.status === 'failed') return null;
+
+    const wasPaused = session.status === 'paused';
 
     const message = {
       id: makeComputerUseId('guide'),
@@ -673,7 +675,13 @@ export class ComputerUseSessionManager extends EventEmitter {
       updatedAt: nowIso(),
     });
     this.emitEvent({ type: 'guidance-sent', sessionId, message });
-    return next;
+
+    // Auto-resume if the session was paused so the guidance gets consumed
+    if (wasPaused) {
+      await this.resumeSession(sessionId);
+    }
+
+    return this.sessions.get(sessionId) ?? next;
   }
 
   /**

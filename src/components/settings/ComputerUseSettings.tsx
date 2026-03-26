@@ -5,6 +5,7 @@ import { NumberField, TextField, Toggle, settingsSelectClass, type SettingsProps
 type ComputerUseConfig = {
   enabled: boolean;
   showStepLog: boolean;
+  toolSurface: 'both' | 'only-calls' | 'only-chat' | 'none';
   defaultSurface: 'docked' | 'window';
   defaultTarget: 'isolated-browser' | 'local-macos' | 'isolated-vm';
   approvalModeDefault: 'step' | 'goal' | 'autonomous';
@@ -126,6 +127,15 @@ export const ComputerUseSettings: FC<SettingsProps> = ({ config, updateConfig })
               <option value="step">Step approvals</option>
               <option value="goal">Goal approvals</option>
               <option value="autonomous">Mostly autonomous</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground block mb-0.5">Tool Availability</label>
+            <select className={settingsSelectClass} value={computerUse.toolSurface ?? 'both'} onChange={(e) => updateConfig('computerUse.toolSurface', e.target.value)}>
+              <option value="both">Chat & Calls (Both)</option>
+              <option value="only-calls">Only Realtime Calls</option>
+              <option value="only-chat">Only Chat</option>
+              <option value="none">Disabled</option>
             </select>
           </div>
           <NumberField label="Idle Timeout (sec)" value={computerUse.idleTimeoutSec} onChange={(value) => updateConfig('computerUse.idleTimeoutSec', value)} min={30} />
