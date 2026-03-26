@@ -45,7 +45,15 @@ export class RealtimeAudioPlayer {
     this.sinkId = deviceId;
     if (this.audioCtx && 'setSinkId' in this.audioCtx) {
       try {
+        // Flush all pre-scheduled audio buffers so they don't continue on the old device
+        for (const source of this.activeSources) {
+          try { source.stop(); } catch { /* already stopped */ }
+        }
+        this.activeSources.clear();
+        this.nextStartTime = this.audioCtx.currentTime;
+
         await (this.audioCtx as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(deviceId);
+        console.info('[RealtimeAudioPlayer] Output device set to:', deviceId || '(default)');
       } catch (err) {
         console.warn('[RealtimeAudioPlayer] Failed to set output device:', err);
       }

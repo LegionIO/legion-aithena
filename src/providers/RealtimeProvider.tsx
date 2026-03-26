@@ -344,8 +344,10 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
   useEffect(() => {
     if (!callActiveRef.current || !playerRef.current) return;
     const deviceId = realtimeConfig?.outputDeviceId;
-    console.log('[RealtimeProvider] Output device changed mid-call:', deviceId ?? 'default');
-    void playerRef.current.setOutputDevice(deviceId ?? '');
+    console.info('[RealtimeProvider] Output device changed mid-call, switching to:', deviceId ?? '(default)');
+    void playerRef.current.setOutputDevice(deviceId ?? '').then(() => {
+      console.info('[RealtimeProvider] Output device switch completed');
+    });
   }, [realtimeConfig?.outputDeviceId]);
 
   // Hot-swap input device when config changes mid-call
