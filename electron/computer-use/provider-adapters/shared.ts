@@ -212,8 +212,9 @@ export async function generateNextActions(params: {
   session: ComputerSession;
   modelConfig: LLMModelConfig;
   role: ComputerUseRole;
+  captureExcludedApps?: string[];
 }): Promise<PlannedActions> {
-  const { session, modelConfig, role } = params;
+  const { session, modelConfig, role, captureExcludedApps } = params;
   const model = await createModel(modelConfig);
   const plannerState = session.plannerState ?? {
     summary: session.goal,
@@ -246,7 +247,48 @@ export async function generateNextActions(params: {
     : undefined;
   const interactiveElementsSection = describeInteractiveElements(session);
 
+  // ── Focused window state & hidden-app detection ──
+  const focusedApp = metadata?.appName ?? null;
+  const focusedWindowTitle = metadata?.windowTitle ?? null;
+  const excludedApps = captureExcludedApps ?? [];
+  const focusedAppIsHidden = focusedApp != null
+    && excludedApps.some((excluded) => focusedApp.toLowerCase() === excluded.toLowerCase());
+
+  // Build a consolidated block describing what the OS reports as the focused window.
+  // This is critical because the screenshot only shows *visible* windows — the actual
+  // focused/frontmost app may be hidden (excluded from capture) and therefore invisible.
+  const focusedWindowLines: string[] = [
+    '--- FOCUSED WINDOW STATE (from OS, not from screenshot) ---',
+    `Focused application: ${focusedApp ?? 'unknown'}`,
+    `Focused window title: ${focusedWindowTitle || '(none)'}`,
+  ];
+  if (focusedAppIsHidden) {
+    focusedWindowLines.push(
+      `MISMATCH: "${focusedApp}" is focused but HIDDEN from the screenshot (it is in the excluded apps list).`,
+      'The screenshot does NOT show this application. Any input actions (click, type, pressKeys) will be sent to this INVISIBLE window, not to what you see in the screenshot.',
+    );
+  }
+  if (excludedApps.length > 0) {
+    focusedWindowLines.push(`Hidden/excluded applications: ${excludedApps.join(', ')}`);
+  }
+  focusedWindowLines.push('--- END FOCUSED WINDOW STATE ---');
+  const focusedWindowBlock = focusedWindowLines.join('\n');
+
+  // When the focused app is hidden, emit a hard-stop warning that goes at the very top
+  // of the prompt so the model cannot miss it.
+  const hiddenFocusWarning = focusedAppIsHidden
+    ? [
+        'STOP — WRONG WINDOW FOCUSED.',
+        `The OS reports "${focusedApp}" as the frontmost application, but "${focusedApp}" is excluded from screenshots so you CANNOT see it.`,
+        'All mouse clicks, keyboard input, and other actions will go to this invisible window — NOT to what is shown in the screenshot.',
+        'You MUST issue a focusWindow or openApp action to bring the correct target application to the front BEFORE doing anything else.',
+        'Do NOT click, type, scroll, or press keys until the focused application matches the window you intend to interact with.',
+      ].join(' ')
+    : undefined;
+
   const promptParts = [
+    // Hidden-focus hard-stop goes first so it is the very first thing the model reads
+    hiddenFocusWarning,
     `Role: ${role}`,
     `Overall goal: ${session.goal}`,
     session.conversationContext ? `Conversation context:\n${session.conversationContext}` : undefined,
@@ -254,10 +296,11 @@ export async function generateNextActions(params: {
     `Plan summary: ${plannerState.summary}`,
     `Current subgoal: ${currentSubgoal}`,
     `Success criteria: ${plannerState.successCriteria.join(' | ')}`,
+    // Focused window state block (always included — the model needs to know what window
+    // is actually focused regardless of whether it is hidden)
+    focusedWindowBlock,
     metadata?.url ? `Current URL: ${metadata.url}` : undefined,
-    metadata?.title ? `Current title: ${metadata.title}` : undefined,
-    metadata?.appName ? `Current app: ${metadata.appName}` : undefined,
-    metadata?.windowTitle ? `Current window: ${metadata.windowTitle}` : undefined,
+    metadata?.title ? `Current page title: ${metadata.title}` : undefined,
     metadata?.visibleText ? `Visible text:\n${metadata.visibleText}` : undefined,
     interactiveElementsSection,
     recentActions ? `Recent actions:\n${recentActions}` : undefined,
@@ -271,9 +314,19 @@ export async function generateNextActions(params: {
     'When interactive elements are listed and the intended control is clearly one of them, prefer returning its elementId and leave x/y null so the runtime can resolve the exact target location.',
     'If you use x/y for a pointer action, use the screenshot coordinates for the visible point you want.',
     'Always set movementPath to direct, horizontal-first, or vertical-first. For pointer-moving actions (movePointer, click, doubleClick, drag), choose the actual route you want the cursor to take.',
-    'Menu interactions and any hover-sensitive UI should strongly avoid direct movement unless a straight path is the only safe option. Direct diagonal travel can cross intermediate items, open the wrong submenu, or collapse the intended target before the click lands.',
-    'When working with menu bars, context menus, cascading submenus, popovers, hover cards, or toolbars that react to pointer travel, prefer horizontal-first or vertical-first and pick the axis order that stays inside the currently-open menu corridor.',
-    'Use direct only when the path is clearly safe or necessary, such as a short unobstructed move, or when segmented motion would itself cross the wrong hover target. For non-pointer actions, use direct.',
+
+    // ── Cursor travel direction & moving targets ──
+    'CRITICAL — Cursor movement direction matters. Many UI elements are "moving targets" that react to the pointer as it travels, so the path the cursor takes is just as important as the destination.',
+
+    'Dock magnification: The macOS dock magnifies icons under the cursor. If your cursor path crosses the dock on the way to a target, the magnification effect shifts every icon\'s position while the pointer is in transit. This means the icon you are aiming for may no longer be where it was in the screenshot by the time the cursor arrives. When clicking a dock icon, approach it from the direction that minimizes travel along the dock axis. For a bottom dock, move vertically down to the icon\'s column first (horizontal-first), then slide horizontally only the short distance needed. Avoid sweeping horizontally across the dock — each icon you pass over will magnify and push neighbors out of position.',
+
+    'Context menus & submenus: When a context menu is open and you need to reach a submenu item, the axis order determines which menu items the cursor hovers over in transit. Moving vertical-first when the submenu extends horizontally will sweep through other top-level menu items, potentially opening a different submenu and collapsing the one you want. Instead, move horizontally into the submenu column first (horizontal-first), then move vertically to the target item. Conversely, if the submenu opens downward from a horizontal menu bar, move horizontally along the menu bar to the correct parent item first, then vertically down into the submenu. The rule is: enter the submenu corridor on the axis that keeps you inside it, then travel along the corridor to the item.',
+
+    'Menu bars & cascading menus: For top-of-screen menu bars, first move horizontally to the correct menu heading, then vertically into the dropdown. For cascading submenus that fly out to the side, move horizontally into the flyout first, then vertically to the item. Direct diagonal travel should be strongly avoided because it crosses intermediate menu items and can open the wrong submenu or collapse the intended target before the click lands.',
+
+    'Hover-sensitive UI (popovers, tooltips, hover cards, toolbars with flyouts): These elements appear or reposition in response to hover. Plan your cursor path to avoid triggering unrelated hover targets on the way to your destination. Prefer the axis order that keeps the cursor in "dead space" or along the edge of the container for as long as possible before entering the interactive zone.',
+
+    'When to use direct: Only use direct movement when the straight-line path is clearly short and unobstructed — no dock, no open menus, no hover-sensitive elements between the current position and the target. Also use direct when segmented (horizontal-first / vertical-first) motion would itself cross a problematic hover target that a straight line avoids. For all non-pointer actions (typeText, pressKeys, scroll, etc.), always use direct.',
     'The response schema is strict. Always include complete, summary, nextSubgoal, and every action field. Use null for any field that does not apply to a given action.',
   ].filter(Boolean).join('\n\n');
 

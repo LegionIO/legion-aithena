@@ -6,11 +6,13 @@ export async function anthropicPlanSession(
   session: ComputerSession,
   modelConfig: LLMModelConfig,
   role: 'driver' | 'recovery' = 'driver',
+  captureExcludedApps?: string[],
 ): Promise<PlannedActions> {
   const plannerState = session.plannerState ?? await createPlannerState(session.goal, modelConfig, session.conversationContext);
   return generateNextActions({
     session: { ...session, plannerState },
     modelConfig,
     role,
+    captureExcludedApps,
   });
 }
