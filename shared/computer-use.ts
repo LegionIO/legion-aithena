@@ -111,6 +111,8 @@ export type ComputerActionProposal = {
   elementId?: string;
   x?: number;
   y?: number;
+  resolvedX?: number;
+  resolvedY?: number;
   endX?: number;
   endY?: number;
   url?: string;
@@ -208,6 +210,8 @@ export type ComputerSession = {
   pauseReason?: ComputerUsePauseReason;
   statusMessage?: string;
   guidanceMessages: ComputerGuidanceMessage[];
+  /** Whether the user has viewed the completed session (clears the sidebar indicator) */
+  completionSeen?: boolean;
 };
 
 export type ComputerOverlayState = {

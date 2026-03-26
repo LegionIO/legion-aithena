@@ -71,10 +71,11 @@ function getTerminalStatus(session: ComputerSession | null): session is Computer
   return Boolean(session && (session.status === 'failed' || session.status === 'completed' || session.status === 'stopped'));
 }
 
-function actionLoopFingerprint(action: Pick<ComputerActionProposal, 'kind' | 'selector' | 'x' | 'y' | 'endX' | 'endY' | 'url' | 'text' | 'keys' | 'deltaX' | 'deltaY' | 'appName' | 'waitMs' | 'movementPath'>): string {
+function actionLoopFingerprint(action: Pick<ComputerActionProposal, 'kind' | 'selector' | 'elementId' | 'x' | 'y' | 'endX' | 'endY' | 'url' | 'text' | 'keys' | 'deltaX' | 'deltaY' | 'appName' | 'waitMs' | 'movementPath'>): string {
   return JSON.stringify({
     kind: action.kind,
     selector: action.selector ?? null,
+    elementId: action.elementId ?? null,
     x: action.x ?? null,
     y: action.y ?? null,
     endX: action.endX ?? null,
@@ -453,7 +454,17 @@ export class ComputerUseOrchestrator {
       lastCompletedActionId: action.id,
       updatedAt: nowIso(),
       actions: existing.actions.map((candidate) => candidate.id === action.id
-        ? { ...candidate, status: 'completed', resultSummary: result.summary }
+        ? {
+            ...candidate,
+            status: 'completed',
+            resultSummary: result.summary,
+            ...(result.cursor && (action.kind === 'movePointer' || action.kind === 'click' || action.kind === 'doubleClick' || action.kind === 'drag')
+              ? {
+                  resolvedX: result.cursor.x ?? candidate.resolvedX ?? candidate.endX ?? candidate.x,
+                  resolvedY: result.cursor.y ?? candidate.resolvedY ?? candidate.endY ?? candidate.y,
+                }
+              : {}),
+          }
         : candidate),
     }));
     const nextAction = updated?.actions.find((candidate) => candidate.id === action.id);

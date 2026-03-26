@@ -14,7 +14,7 @@ import type {
   ComputerUseTarget,
   StartComputerSessionOptions,
 } from '../../shared/computer-use.js';
-import { makeComputerUseId, nowIso } from '../../shared/computer-use.js';
+import { isComputerSessionTerminal, makeComputerUseId, nowIso } from '../../shared/computer-use.js';
 import type { LegionConfig } from '../config/schema.js';
 import { resolveModelCatalog, resolveModelForThread } from '../agent/model-catalog.js';
 import { ComputerUseOrchestrator } from './orchestrator.js';
@@ -251,6 +251,13 @@ export class ComputerUseSessionManager extends EventEmitter {
 
   private upsertSession(session: ComputerSession): ComputerSession {
     const previous = this.sessions.get(session.id) ?? null;
+
+    // Reset completionSeen when a session newly reaches a terminal state
+    // (so the sidebar indicator reappears for fresh completions)
+    if (session.status === 'completed' && previous?.status !== 'completed') {
+      session = { ...session, completionSeen: false };
+    }
+
     this.sessions.set(session.id, session);
     this.persistSession(session);
     notifyForSessionTransition(previous, session);
@@ -669,6 +676,62 @@ export class ComputerUseSessionManager extends EventEmitter {
     return next;
   }
 
+  /**
+   * Continue a completed/stopped/failed session with a new goal.
+   * Preserves all existing actions, checkpoints, guidance, and frames.
+   * The new goal is appended to the original, and execution resumes.
+   */
+  async continueSession(sessionId: string, newGoal: string): Promise<ComputerSession | null> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    if (!isComputerSessionTerminal(session.status)) return null; // only terminal sessions can be continued
+
+    const target = session.target;
+
+    // Re-check permissions for local-macos
+    const { permissions, blocker } = target === 'local-macos'
+      ? await this.evaluatePreflight(target, { requestMissing: true })
+      : { permissions: session.permissionState, blocker: null as string | null };
+
+    if (blocker) {
+      return this.upsertSession({
+        ...session,
+        status: 'failed',
+        permissionState: permissions ? { ...permissions, message: blocker } : session.permissionState,
+        lastError: blocker,
+        statusMessage: blocker,
+        updatedAt: nowIso(),
+      });
+    }
+
+    // Append the new goal to the original
+    const continuedGoal = `${session.goal}\n\nFollow-up: ${newGoal.trim()}`;
+
+    // Add a guidance message so the orchestrator sees the new instruction
+    const guidanceMessage = {
+      id: makeComputerUseId('guide'),
+      text: newGoal.trim(),
+      createdAt: nowIso(),
+    };
+
+    const next = this.upsertSession({
+      ...session,
+      goal: continuedGoal,
+      status: 'running',
+      lastError: undefined,
+      statusMessage: undefined,
+      pauseReason: undefined,
+      humanInControl: false,
+      guidanceMessages: [...(session.guidanceMessages ?? []), guidanceMessage],
+      updatedAt: nowIso(),
+      ...(permissions ? { permissionState: permissions } : {}),
+    });
+
+    this.openOverlayIfEnabled(next);
+    this.orchestrator.resume(sessionId);
+    return next;
+  }
+
   async approveAction(sessionId: string, actionId: string): Promise<ComputerSession | null> {
     const session = this.sessions.get(sessionId);
     if (!session) return null;
@@ -738,6 +801,23 @@ export class ComputerUseSessionManager extends EventEmitter {
     }
     for (const sessionId of toRemove) {
       this.removeSession(sessionId);
+    }
+  }
+
+  /** Mark a session's completion as seen (clears the sidebar notification dot). */
+  markCompletionSeen(sessionId: string): ComputerSession | null {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    if (session.completionSeen) return session;
+    return this.upsertSession({ ...session, completionSeen: true, updatedAt: nowIso() });
+  }
+
+  /** Mark all completed sessions for a conversation as seen. */
+  markConversationSessionsSeen(conversationId: string): void {
+    for (const session of this.sessions.values()) {
+      if (session.conversationId === conversationId && session.status === 'completed' && !session.completionSeen) {
+        this.upsertSession({ ...session, completionSeen: true, updatedAt: nowIso() });
+      }
     }
   }
 }

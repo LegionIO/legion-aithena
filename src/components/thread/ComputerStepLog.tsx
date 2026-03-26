@@ -49,13 +49,19 @@ function formatRelativeTime(createdAt: string): string {
 
 function actionDetailEntries(action: ComputerActionProposal): Array<[string, string]> {
   const entries: Array<[string, string]> = [];
-  if (action.x != null && action.y != null) entries.push(['position', `(${action.x}, ${action.y})`]);
+  const hasResolvedPosition = action.resolvedX != null && action.resolvedY != null;
+  const resolvedDiffers = hasResolvedPosition && (action.resolvedX !== action.x || action.resolvedY !== action.y);
+  if (action.x != null && action.y != null) {
+    entries.push([resolvedDiffers ? 'requested position' : 'position', `(${action.x}, ${action.y})`]);
+  }
+  if (resolvedDiffers) entries.push(['applied position', `(${action.resolvedX}, ${action.resolvedY})`]);
   if (action.endX != null && action.endY != null) entries.push(['drag to', `(${action.endX}, ${action.endY})`]);
   if (action.text) entries.push(['text', action.text]);
   if (action.keys?.length) entries.push(['keys', action.keys.join(' + ')]);
   if (action.url) entries.push(['url', action.url]);
   if (action.appName) entries.push(['app', action.appName]);
   if (action.selector) entries.push(['selector', action.selector]);
+  if (action.elementId) entries.push(['element', action.elementId]);
   if (action.waitMs) entries.push(['wait', `${action.waitMs}ms`]);
   if (action.deltaX != null || action.deltaY != null) entries.push(['scroll', `(${action.deltaX ?? 0}, ${action.deltaY ?? 0})`]);
   return entries;
@@ -97,21 +103,62 @@ const CheckpointDivider: FC<{ checkpoint: ComputerCheckpoint }> = ({ checkpoint 
   </div>
 );
 
-const ScreenshotThumbnail: FC<{ frame: ComputerFrame }> = ({ frame }) => {
+const ScreenshotThumbnail: FC<{
+  frame: ComputerFrame;
+  /** Action target coordinates to render as a cursor indicator overlay */
+  cursorX?: number;
+  cursorY?: number;
+  /** Drag end coordinates (shows a second indicator connected by a line) */
+  dragEndX?: number;
+  dragEndY?: number;
+}> = ({ frame, cursorX, cursorY, dragEndX, dragEndY }) => {
   const [expanded, setExpanded] = useState(false);
+  const hasCursor = cursorX != null && cursorY != null && frame.width > 0 && frame.height > 0;
+  const hasDragEnd = dragEndX != null && dragEndY != null;
 
   return (
     <div className="mt-2">
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="block overflow-hidden rounded-lg border border-border/50 transition-colors hover:border-border/80"
+        className="relative block overflow-hidden rounded-lg border border-border/50 transition-colors hover:border-border/80"
       >
         <img
           src={frame.dataUrl}
           alt="Viewport"
           className={`block w-full object-contain bg-black/60 ${expanded ? 'max-h-[400px]' : 'max-h-[180px]'}`}
         />
+        {/* Cursor indicator — purple circle at the action's target position */}
+        {hasCursor && (
+          <>
+            {/* Outer glow ring */}
+            <div
+              className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-purple-400/60 shadow-[0_0_8px_3px_rgba(168,85,247,0.25)]"
+              style={{
+                left: `${(cursorX / frame.width) * 100}%`,
+                top: `${(cursorY / frame.height) * 100}%`,
+              }}
+            />
+            {/* Inner dot */}
+            <div
+              className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-500/70 border border-purple-300/80"
+              style={{
+                left: `${(cursorX / frame.width) * 100}%`,
+                top: `${(cursorY / frame.height) * 100}%`,
+              }}
+            />
+            {/* Drag end indicator */}
+            {hasDragEnd && (
+              <div
+                className="pointer-events-none absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-dashed border-purple-400/40"
+                style={{
+                  left: `${(dragEndX / frame.width) * 100}%`,
+                  top: `${(dragEndY / frame.height) * 100}%`,
+                }}
+              />
+            )}
+          </>
+        )}
       </button>
       {frame.summary && (
         <p className="mt-1 text-[10px] text-muted-foreground/60">{frame.summary}</p>
@@ -207,7 +254,13 @@ const StepCard: FC<{
               <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
                 {isLatest ? 'Current viewport' : 'Viewport at this step'}
               </div>
-              <ScreenshotThumbnail frame={frame} />
+              <ScreenshotThumbnail
+                frame={frame}
+                cursorX={action.resolvedX ?? action.x}
+                cursorY={action.resolvedY ?? action.y}
+                dragEndX={action.endX}
+                dragEndY={action.endY}
+              />
             </div>
           )}
 

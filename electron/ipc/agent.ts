@@ -5,6 +5,7 @@ import { resolveModelForThread, resolveModelCatalog, resolveStreamConfig, type M
 import { streamAgentResponse, streamWithFallback } from '../agent/mastra-agent.js';
 import type { StreamEvent, ReasoningEffort } from '../agent/mastra-agent.js';
 import { getLegionStatus, resolveAgentBackend, streamLegionAgent } from '../agent/legion-runtime.js';
+import { createLanguageModelFromConfig } from '../agent/language-model.js';
 import type { LegionConfig } from '../config/schema.js';
 import { readEffectiveConfig } from './config.js';
 import { shouldCompact, compactConversationPrefix } from '../agent/compaction.js';
@@ -384,6 +385,7 @@ export function registerAgentHandlers(ipcMain: IpcMain, legionHome: string): voi
           try {
             const context: ToolExecutionContext = {
               toolCallId,
+              conversationId,
               abortSignal: mergedAbortSignal,
               onProgress: (progress) => {
                 if (activeObserverSessions.get(conversationId) !== observerSessionId) return;
@@ -689,7 +691,6 @@ export function registerAgentHandlers(ipcMain: IpcMain, legionHome: string): voi
 
     try {
       const { Agent } = await import('@mastra/core/agent');
-      const { createLanguageModelFromConfig } = await import('../agent/language-model.js');
       const model = await createLanguageModelFromConfig(modelEntry.modelConfig);
 
       const agent = new Agent({
@@ -756,10 +757,13 @@ export function registerAgentHandlers(ipcMain: IpcMain, legionHome: string): voi
       const config = readEffectiveConfig(legionHome);
       const catalog = resolveModelCatalog(config);
       return {
-        models: catalog.entries.map((e: { key: string; displayName: string; modelConfig: { maxInputTokens?: number } }) => ({
+        models: catalog.entries.map((e: { key: string; displayName: string; modelConfig: { maxInputTokens?: number }; computerUseSupport?: string; visionCapable?: boolean; preferredTarget?: string }) => ({
           key: e.key,
           displayName: e.displayName,
           maxInputTokens: e.modelConfig.maxInputTokens,
+          computerUseSupport: e.computerUseSupport,
+          visionCapable: e.visionCapable,
+          preferredTarget: e.preferredTarget,
         })),
         defaultKey: catalog.defaultEntry?.key ?? null,
       };

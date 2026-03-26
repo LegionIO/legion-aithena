@@ -23,6 +23,7 @@ import type {
 import { createPluginAPI, cleanupPluginAPI } from './plugin-api.js';
 import type { LegionConfig } from '../config/schema.js';
 import type { ToolDefinition } from '../tools/types.js';
+import { broadcastToAllWindows } from '../utils/window-send.js';
 
 const PLUGIN_PERMISSION_LABELS: Record<PluginPermission, string> = {
   'config:read': 'Read app configuration',
@@ -435,9 +436,7 @@ export class PluginManager {
 
   private broadcastUIState(): void {
     const state = this.getUIState();
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('plugin:ui-state-changed', state);
-    }
+    broadcastToAllWindows('plugin:ui-state-changed', state);
   }
 
   /* ── Actions (renderer → main) ── */
@@ -467,9 +466,7 @@ export class PluginManager {
   /* ── Send callback data to renderer modal ── */
 
   sendModalCallback(pluginName: string, modalId: string, data: unknown): void {
-    for (const win of BrowserWindow.getAllWindows()) {
-      win.webContents.send('plugin:modal-callback', { pluginName, modalId, data });
-    }
+    broadcastToAllWindows('plugin:modal-callback', { pluginName, modalId, data });
   }
 
   /* ── Queries ── */

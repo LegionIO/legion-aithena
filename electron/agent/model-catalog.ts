@@ -1,4 +1,5 @@
 import type { LegionConfig } from '../config/schema.js';
+import type { ComputerUseSupport, ComputerUseTarget } from '../../shared/computer-use.js';
 
 export type LLMProviderType = 'openai-compatible' | 'anthropic' | 'amazon-bedrock' | 'google';
 
@@ -27,6 +28,9 @@ export type ModelCatalogEntry = {
   key: string;
   displayName: string;
   modelConfig: LLMModelConfig;
+  computerUseSupport?: ComputerUseSupport;
+  visionCapable?: boolean;
+  preferredTarget?: ComputerUseTarget;
 };
 
 export function resolveModelCatalog(config: LegionConfig): {
@@ -66,6 +70,9 @@ export function resolveModelCatalog(config: LegionConfig): {
       key: model.key,
       displayName: model.displayName,
       modelConfig,
+      computerUseSupport: model.computerUseSupport,
+      visionCapable: model.visionCapable,
+      preferredTarget: model.preferredTarget,
     };
 
     entries.push(entry);

@@ -7,6 +7,9 @@ type ModelInfo = {
   key: string;
   displayName: string;
   maxInputTokens?: number;
+  computerUseSupport?: string;
+  visionCapable?: boolean;
+  preferredTarget?: string;
 };
 
 type ModelCatalog = {
@@ -18,9 +21,11 @@ type ModelSelectorProps = {
   selectedModelKey: string | null;
   onSelectModel: (key: string) => void;
   disabled?: boolean;
+  filter?: (model: ModelInfo) => boolean;
+  fallbackToUnfilteredWhenEmpty?: boolean;
 };
 
-export const ModelSelector: FC<ModelSelectorProps> = ({ selectedModelKey, onSelectModel, disabled }) => {
+export const ModelSelector: FC<ModelSelectorProps> = ({ selectedModelKey, onSelectModel, disabled, filter, fallbackToUnfilteredWhenEmpty }) => {
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -46,8 +51,14 @@ export const ModelSelector: FC<ModelSelectorProps> = ({ selectedModelKey, onSele
 
   if (!catalog || catalog.models.length === 0) return null;
 
-  const currentKey = selectedModelKey ?? catalog.defaultKey ?? catalog.models[0]?.key;
-  const currentModel = catalog.models.find((m) => m.key === currentKey) ?? catalog.models[0];
+  const filteredModels = filter ? catalog.models.filter(filter) : catalog.models;
+  const models = filteredModels.length === 0 && fallbackToUnfilteredWhenEmpty
+    ? catalog.models
+    : filteredModels;
+  if (models.length === 0) return null;
+
+  const currentKey = selectedModelKey ?? catalog.defaultKey ?? models[0]?.key;
+  const currentModel = models.find((m) => m.key === currentKey) ?? models[0];
   const currentLabel = formatModelDisplayName(currentModel?.displayName ?? 'Select model');
 
   return (
@@ -70,7 +81,7 @@ export const ModelSelector: FC<ModelSelectorProps> = ({ selectedModelKey, onSele
           <div className="absolute bottom-full right-0 z-50 mb-2 w-[240px] rounded-2xl border border-border/70 bg-popover/95 p-1.5 shadow-[0_16px_40px_rgba(5,4,15,0.28)] backdrop-blur-xl">
             <div className="px-3 py-2 text-sm font-medium text-muted-foreground">Select model</div>
             <div className="max-h-[300px] overflow-y-auto">
-              {catalog.models.map((model) => {
+              {models.map((model) => {
                 const displayLabel = formatModelDisplayName(model.displayName);
                 return (
                 <button
@@ -91,6 +102,11 @@ export const ModelSelector: FC<ModelSelectorProps> = ({ selectedModelKey, onSele
                   {model.maxInputTokens && (
                     <span className="text-[10px] opacity-60">
                       {Math.round(model.maxInputTokens / 1000)}k
+                    </span>
+                  )}
+                  {model.computerUseSupport && model.computerUseSupport !== 'none' && (
+                    <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                      CU
                     </span>
                   )}
                   {model.key === currentKey && <CheckIcon className="h-4 w-4 shrink-0" />}

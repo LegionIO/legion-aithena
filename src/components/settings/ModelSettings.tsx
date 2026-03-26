@@ -28,6 +28,9 @@ type CatalogEntry = {
   deploymentName?: string;
   maxInputTokens?: number;
   useResponsesApi?: boolean;
+  computerUseSupport?: 'openai-responses' | 'anthropic-client-tool' | 'gemini-computer-use' | 'custom' | 'none';
+  visionCapable?: boolean;
+  preferredTarget?: 'isolated-browser' | 'local-macos' | 'isolated-vm';
 };
 
 type AgentBackend = 'mastra' | 'legion-daemon';
@@ -293,6 +296,9 @@ const ModelCatalog: FC<{
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium truncate">{formatModelDisplayName(m.displayName)}</span>
                   <span className="text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5 shrink-0">{m.provider}</span>
+                  {m.computerUseSupport && m.computerUseSupport !== 'none' && (
+                    <span className="text-[10px] text-primary bg-primary/10 rounded px-1.5 py-0.5 shrink-0">Computer Use</span>
+                  )}
                 </div>
                 <div className="text-[10px] text-muted-foreground font-mono truncate mt-0.5">
                   {m.modelName}
@@ -348,6 +354,9 @@ const ModelForm: FC<{
   const [deploymentName, setDeploymentName] = useState(initial.deploymentName ?? '');
   const [maxInputTokens, setMaxInputTokens] = useState(initial.maxInputTokens?.toString() ?? '');
   const [useResponsesApi, setUseResponsesApi] = useState(initial.useResponsesApi ?? false);
+  const [computerUseSupport, setComputerUseSupport] = useState(initial.computerUseSupport ?? 'none');
+  const [visionCapable, setVisionCapable] = useState(initial.visionCapable ?? false);
+  const [preferredTarget, setPreferredTarget] = useState(initial.preferredTarget ?? 'isolated-browser');
 
   const selectedProvider = providers[provider];
 
@@ -364,8 +373,11 @@ const ModelForm: FC<{
     if (deploymentName.trim()) entry.deploymentName = deploymentName.trim();
     if (maxInputTokens) entry.maxInputTokens = Number(maxInputTokens);
     if (selectedProvider?.type === 'openai-compatible') {
-      entry.useResponsesApi = useResponsesApi;
+      entry.useResponsesApi = computerUseSupport === 'openai-responses' ? true : useResponsesApi;
     }
+    entry.computerUseSupport = computerUseSupport;
+    entry.visionCapable = visionCapable;
+    entry.preferredTarget = preferredTarget;
     onSave(entry);
   };
 
@@ -448,6 +460,37 @@ const ModelForm: FC<{
       {selectedProvider?.type === 'openai-compatible' && (
         <Toggle label="Use Responses API" checked={useResponsesApi} onChange={setUseResponsesApi} />
       )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] text-muted-foreground block mb-0.5">Computer Use Support</label>
+          <select
+            className={settingsSelectClass.replace('bg-card/80', 'bg-background')}
+            value={computerUseSupport}
+            onChange={(e) => setComputerUseSupport((e.target.value || 'none') as NonNullable<CatalogEntry['computerUseSupport']>)}
+          >
+            <option value="none">None</option>
+            <option value="openai-responses">OpenAI Responses</option>
+            <option value="anthropic-client-tool">Anthropic client tool</option>
+            <option value="gemini-computer-use">Gemini computer use</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] text-muted-foreground block mb-0.5">Preferred Target</label>
+          <select
+            className={settingsSelectClass.replace('bg-card/80', 'bg-background')}
+            value={preferredTarget}
+            onChange={(e) => setPreferredTarget((e.target.value || 'isolated-browser') as NonNullable<CatalogEntry['preferredTarget']>)}
+          >
+            <option value="isolated-browser">Isolated Browser</option>
+            <option value="local-macos">Local Mac</option>
+            <option value="isolated-vm">Isolated VM</option>
+          </select>
+        </div>
+      </div>
+
+      <Toggle label="Vision Capable" checked={visionCapable} onChange={setVisionCapable} />
 
       <div className="flex items-center gap-2 pt-1">
         <button

@@ -30,6 +30,7 @@ const actionSchema = z.object({
     rationale: z.string().min(1).max(240),
     risk: z.enum(['low', 'medium', 'high']),
     selector: nullableString,
+    elementId: nullableString,
     x: nullableNumber,
     y: nullableNumber,
     endX: nullableNumber,
@@ -87,10 +88,33 @@ function normalizeText(value?: string | null, maxLength = 120): string {
   return text.length <= maxLength ? text : `${text.slice(0, Math.max(0, maxLength - 3)).trimEnd()}...`;
 }
 
-function actionFingerprint(action: Pick<ComputerActionProposal, 'kind' | 'selector' | 'x' | 'y' | 'endX' | 'endY' | 'url' | 'text' | 'keys' | 'deltaX' | 'deltaY' | 'appName' | 'waitMs' | 'movementPath'>): string {
+function describeInteractiveElements(session: ComputerSession, maxItems = 24): string | undefined {
+  const elements = session.latestEnvironment?.interactiveElements;
+  if (!Array.isArray(elements) || elements.length === 0) return undefined;
+
+  const lines = elements
+    .slice(0, maxItems)
+    .map((element, index) => {
+      const role = normalizeText(element.role, 24) || 'element';
+      const label = normalizeText(element.label, 40);
+      const text = normalizeText(element.text, 48);
+      const selector = normalizeText(element.selector, 40);
+      const descriptors = [label && `label="${label}"`, text && `text="${text}"`, selector && `selector=${selector}`]
+        .filter(Boolean)
+        .join(' ');
+
+      return `${index + 1}. ${element.id} ${role} at (${element.x}, ${element.y}) size ${element.width}x${element.height}${descriptors ? ` ${descriptors}` : ''}`;
+    });
+
+  if (lines.length === 0) return undefined;
+  return `Interactive elements (frame coordinates):\n${lines.join('\n')}`;
+}
+
+function actionFingerprint(action: Pick<ComputerActionProposal, 'kind' | 'selector' | 'elementId' | 'x' | 'y' | 'endX' | 'endY' | 'url' | 'text' | 'keys' | 'deltaX' | 'deltaY' | 'appName' | 'waitMs' | 'movementPath'>): string {
   return JSON.stringify({
     kind: action.kind,
     selector: action.selector ?? null,
+    elementId: action.elementId ?? null,
     x: action.x ?? null,
     y: action.y ?? null,
     endX: action.endX ?? null,
@@ -106,9 +130,10 @@ function actionFingerprint(action: Pick<ComputerActionProposal, 'kind' | 'select
   });
 }
 
-function describeAction(action: Pick<ComputerActionProposal, 'kind' | 'selector' | 'x' | 'y' | 'endX' | 'endY' | 'url' | 'text' | 'keys' | 'deltaX' | 'deltaY' | 'appName' | 'waitMs' | 'movementPath'>): string {
+function describeAction(action: Pick<ComputerActionProposal, 'kind' | 'selector' | 'elementId' | 'x' | 'y' | 'endX' | 'endY' | 'url' | 'text' | 'keys' | 'deltaX' | 'deltaY' | 'appName' | 'waitMs' | 'movementPath'>): string {
   const parts: string[] = [action.kind];
   if (action.selector) parts.push(`selector=${action.selector}`);
+  if (action.elementId) parts.push(`element=${action.elementId}`);
   if (action.x != null && action.y != null) parts.push(`at ${action.x},${action.y}`);
   if (action.endX != null && action.endY != null) parts.push(`to ${action.endX},${action.endY}`);
   if (action.url) parts.push(`url=${action.url}`);
@@ -219,6 +244,7 @@ export async function generateNextActions(params: {
   const guidanceSection = guidanceMessages.length > 0
     ? `User guidance (received during this session — treat as highest-priority steering):\n${guidanceMessages.join('\n')}`
     : undefined;
+  const interactiveElementsSection = describeInteractiveElements(session);
 
   const promptParts = [
     `Role: ${role}`,
@@ -233,6 +259,7 @@ export async function generateNextActions(params: {
     metadata?.appName ? `Current app: ${metadata.appName}` : undefined,
     metadata?.windowTitle ? `Current window: ${metadata.windowTitle}` : undefined,
     metadata?.visibleText ? `Visible text:\n${metadata.visibleText}` : undefined,
+    interactiveElementsSection,
     recentActions ? `Recent actions:\n${recentActions}` : undefined,
     loopAlert,
     role === 'recovery'
@@ -241,6 +268,8 @@ export async function generateNextActions(params: {
     'Resolve references such as "that", "that fix", or "the change we discussed" against the conversation context before acting.',
     'Return the next 0-3 actions. Prefer navigate when a URL is obvious. Use click/scroll/type only when grounded in the current UI. Mark complete=true only when the user goal is clearly done.',
     'If the last approach appears stuck, do not repeat the same action sequence. Change strategy and gather new evidence from the current UI first.',
+    'When interactive elements are listed and the intended control is clearly one of them, prefer returning its elementId and leave x/y null so the runtime can resolve the exact target location.',
+    'If you use x/y for a pointer action, use the screenshot coordinates for the visible point you want.',
     'Always set movementPath to direct, horizontal-first, or vertical-first. For pointer-moving actions (movePointer, click, doubleClick, drag), choose the actual route you want the cursor to take.',
     'Menu interactions and any hover-sensitive UI should strongly avoid direct movement unless a straight path is the only safe option. Direct diagonal travel can cross intermediate items, open the wrong submenu, or collapse the intended target before the click lands.',
     'When working with menu bars, context menus, cascading submenus, popovers, hover cards, or toolbars that react to pointer travel, prefer horizontal-first or vertical-first and pick the axis order that stays inside the currently-open menu corridor.',
@@ -275,6 +304,7 @@ export async function generateNextActions(params: {
       risk: action.risk,
       requiresApproval: action.risk !== 'low',
       selector: action.selector ?? undefined,
+      elementId: action.elementId ?? undefined,
       x: action.x ?? undefined,
       y: action.y ?? undefined,
       endX: action.endX ?? undefined,

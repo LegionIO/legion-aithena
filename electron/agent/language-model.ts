@@ -126,9 +126,9 @@ export async function createLanguageModelFromConfig(modelConfig: LLMModelConfig)
     throw new Error('Gemini models are not supported by Legion runtime yet.');
   }
 
-  console.info(
-    `[LLM] Creating model: provider=${modelConfig.provider} model=${modelConfig.modelName} baseURL=${modelConfig.endpoint ?? 'default'} useResponsesApi=${modelConfig.useResponsesApi ?? 'default'}`,
-  );
+  // console.info(
+  //   `[LLM] Creating model: provider=${modelConfig.provider} model=${modelConfig.modelName} baseURL=${modelConfig.endpoint ?? 'default'} useResponsesApi=${modelConfig.useResponsesApi ?? 'default'}`,
+  // );
 
   if (modelConfig.provider === 'anthropic') {
     const anthropic = createAnthropic({

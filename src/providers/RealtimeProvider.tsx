@@ -281,6 +281,16 @@ export const RealtimeProvider: FC<PropsWithChildren> = ({ children }) => {
       if (autoEndEnabled) {
         silenceTimerRef.current = setInterval(() => {
           if (!callActiveRef.current) return;
+
+          // Don't count silence while the AI is actively speaking or generating
+          const isPlaying = playerRef.current?.playing ?? false;
+          if (isPlaying) {
+            // Reset the speech timer — there's active audio, not silence
+            lastUserSpeechRef.current = Date.now();
+            setCallState((prev) => prev.silenceCountdown ? { ...prev, silenceCountdown: undefined } : prev);
+            return;
+          }
+
           const silenceSec = (Date.now() - lastUserSpeechRef.current) / 1000;
           const threshold75 = silenceTimeoutSec * 0.75;
 

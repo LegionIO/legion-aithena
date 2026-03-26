@@ -4,6 +4,7 @@ import { legion } from '@/lib/ipc-client';
 import { EditableInput } from '@/components/EditableInput';
 import { useComputerUse } from '@/providers/ComputerUseProvider';
 import type { ConversationRecord } from '@/providers/RuntimeProvider';
+import type { ComputerSession } from '../../../shared/computer-use';
 
 type ConversationSummary = Pick<
   ConversationRecord,
@@ -27,8 +28,18 @@ function formatRelativeTime(timestamp: string | null): string {
   return `${Math.floor(diffMs / 604_800_000)}w ago`;
 }
 
-function getDisplayTitle(conv: ConversationSummary): string {
-  return conv.title?.trim() || conv.fallbackTitle?.trim() || 'New Conversation';
+function getDisplayTitle(conv: ConversationSummary, computerSessions?: ComputerSession[]): string {
+  // Prefer chat-based titles
+  const chatTitle = conv.title?.trim() || conv.fallbackTitle?.trim();
+  if (chatTitle) return chatTitle;
+
+  // Fall back to computer-use session goal
+  if (computerSessions?.length) {
+    const goal = computerSessions[0].goal;
+    if (goal) return goal.length > 50 ? goal.slice(0, 47).trimEnd() + '...' : goal;
+  }
+
+  return 'New Conversation';
 }
 
 const TypingBubble: FC = () => (
@@ -126,7 +137,7 @@ export const ConversationList: FC<ConversationListProps> = ({
     if (!sessions?.length) return null;
     const latest = sessions[0]; // sorted by updatedAt desc
     if (latest.status === 'running' || latest.status === 'starting' || latest.status === 'awaiting-approval') return 'running';
-    if (latest.status === 'completed') return 'completed';
+    if (latest.status === 'completed' && !latest.completionSeen) return 'completed';
     return null;
   }, [sessionsByConversation]);
 
@@ -181,7 +192,7 @@ export const ConversationList: FC<ConversationListProps> = ({
     if (!isSearchActive) return conversations;
     const q = searchQuery.toLowerCase();
     return conversations.filter((c) =>
-      getDisplayTitle(c).toLowerCase().includes(q),
+      getDisplayTitle(c, sessionsByConversation.get(c.id)).toLowerCase().includes(q),
     );
   }, [conversations, searchQuery, isSearchActive]);
 
@@ -221,6 +232,8 @@ export const ConversationList: FC<ConversationListProps> = ({
     if (conv?.hasUnread) {
       await legion.conversations.put({ ...conv, hasUnread: false });
     }
+    // Mark completed computer-use sessions as seen (persisted to disk)
+    void legion.computerUse.markSessionsSeen(id);
     onSwitchConversation(id);
   };
 
@@ -302,7 +315,7 @@ export const ConversationList: FC<ConversationListProps> = ({
               <MessageSquareIcon className={`mt-0.5 h-4 w-4 shrink-0 ${hasUnread ? 'text-primary' : 'text-muted-foreground'}`} />
               <div className="flex-1 min-w-0">
                 <span className={`line-clamp-2 text-sm ${hasUnread ? 'font-semibold text-sidebar-foreground' : 'font-medium text-sidebar-foreground/95'}`}>
-                  {getDisplayTitle(conv)}
+                  {getDisplayTitle(conv, sessionsByConversation.get(conv.id))}
                 </span>
                 <span className="mt-1 block text-[12px] text-muted-foreground">
                   {isRunning ? 'Running now' : formatRelativeTime(conv.lastAssistantUpdateAt ?? conv.lastMessageAt)}

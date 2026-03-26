@@ -257,33 +257,37 @@ export async function buildToolRegistry(getConfig: () => LegionConfig, legionHom
     });
     tools.push({
       name: 'computer_use_control',
-      description: 'Control an existing computer-use session: pause, resume, stop, approve/reject actions, or change the display surface. If sessionId is omitted, targets the most recent active session for the current conversation.',
+      description: 'Control an existing computer-use session: pause, resume, stop, continue (resume a completed session with a new goal), approve/reject actions, or change the display surface. If sessionId is omitted, targets the most recent session for the current conversation.',
       inputSchema: z.object({
-        sessionId: z.string().optional().describe('Session ID. If omitted, targets the most recent active session for the current conversation.'),
-        action: z.enum(['pause', 'resume', 'stop', 'approve', 'reject', 'surface']),
+        sessionId: z.string().optional().describe('Session ID. If omitted, targets the most recent session for the current conversation.'),
+        action: z.enum(['pause', 'resume', 'stop', 'continue', 'approve', 'reject', 'surface']),
         actionId: z.string().optional().describe('Required for approve/reject actions.'),
         reason: z.string().optional().describe('Optional rejection reason.'),
+        goal: z.string().optional().describe('Required for continue action — the new follow-up goal.'),
         surface: z.enum(['docked', 'window']).optional().describe('Required for surface action.'),
       }),
       execute: async (input, context) => {
         const payload = input as {
           sessionId?: string;
-          action: 'pause' | 'resume' | 'stop' | 'approve' | 'reject' | 'surface';
+          action: 'pause' | 'resume' | 'stop' | 'continue' | 'approve' | 'reject' | 'surface';
           actionId?: string;
           reason?: string;
+          goal?: string;
           surface?: 'docked' | 'window';
         };
 
         let targetSessionId = payload.sessionId;
         if (!targetSessionId && context.conversationId) {
           const all = manager.listSessions();
-          const active = all.find((s) =>
-            s.conversationId === context.conversationId
-            && s.status !== 'completed' && s.status !== 'stopped' && s.status !== 'failed',
-          );
-          targetSessionId = active?.id;
+          // For 'continue', find the most recent terminal session; otherwise find the active one
+          const match = payload.action === 'continue'
+            ? all.find((s) => s.conversationId === context.conversationId
+                && (s.status === 'completed' || s.status === 'stopped' || s.status === 'failed'))
+            : all.find((s) => s.conversationId === context.conversationId
+                && s.status !== 'completed' && s.status !== 'stopped' && s.status !== 'failed');
+          targetSessionId = match?.id;
         }
-        if (!targetSessionId) return { isError: true, error: 'No active computer-use session found.' };
+        if (!targetSessionId) return { isError: true, error: payload.action === 'continue' ? 'No completed computer-use session found to continue.' : 'No active computer-use session found.' };
 
         const result = payload.action === 'pause'
           ? manager.pauseSession(targetSessionId)
@@ -291,11 +295,13 @@ export async function buildToolRegistry(getConfig: () => LegionConfig, legionHom
             ? manager.resumeSession(targetSessionId)
             : payload.action === 'stop'
               ? manager.stopSession(targetSessionId)
-              : payload.action === 'approve'
-                ? await manager.approveAction(targetSessionId, payload.actionId ?? '')
-                : payload.action === 'reject'
-                  ? manager.rejectAction(targetSessionId, payload.actionId ?? '', payload.reason)
-                  : manager.setSurface(targetSessionId, payload.surface ?? 'docked');
+              : payload.action === 'continue'
+                ? await manager.continueSession(targetSessionId, payload.goal ?? '')
+                : payload.action === 'approve'
+                  ? await manager.approveAction(targetSessionId, payload.actionId ?? '')
+                  : payload.action === 'reject'
+                    ? manager.rejectAction(targetSessionId, payload.actionId ?? '', payload.reason)
+                    : manager.setSurface(targetSessionId, payload.surface ?? 'docked');
         return result ?? { isError: true, error: 'Computer-use session not found.' };
       },
     });
@@ -367,6 +373,8 @@ export async function buildToolRegistry(getConfig: () => LegionConfig, legionHom
             createdAt: action.createdAt,
             // Include action params but NOT screenshots
             ...(action.x != null ? { x: action.x, y: action.y } : {}),
+            ...(action.resolvedX != null ? { resolvedX: action.resolvedX, resolvedY: action.resolvedY } : {}),
+            ...(action.elementId ? { elementId: action.elementId } : {}),
             ...(action.text ? { text: action.text } : {}),
             ...(action.url ? { url: action.url } : {}),
             ...(action.keys?.length ? { keys: action.keys } : {}),
@@ -412,10 +420,10 @@ export async function buildToolRegistry(getConfig: () => LegionConfig, legionHom
 
     tools.push({
       name: 'computer_use_session_message',
-      description: 'Send a guidance message to an active computer-use session. The message will be queued and injected into the next planning cycle to steer the AI\'s actions. Use this to redirect, clarify, or add instructions to a running session.',
+      description: 'Send a guidance message to a computer-use session. If the session is active, the message is queued for the next planning cycle. If the session has completed/stopped/failed, it will be automatically resumed with the message as a follow-up goal. Use this to redirect, clarify, add instructions, or continue a finished session.',
       inputSchema: z.object({
-        sessionId: z.string().optional().describe('Session ID. If omitted, targets the most recent active session for the current conversation.'),
-        message: z.string().describe('The guidance message to send to the session.'),
+        sessionId: z.string().optional().describe('Session ID. If omitted, targets the most recent session for the current conversation.'),
+        message: z.string().describe('The guidance or follow-up message to send to the session.'),
       }),
       execute: async (input, context) => {
         const payload = input as { sessionId?: string; message: string };
@@ -423,23 +431,43 @@ export async function buildToolRegistry(getConfig: () => LegionConfig, legionHom
         let targetSessionId = payload.sessionId;
         if (!targetSessionId && context.conversationId) {
           const all = manager.listSessions();
+          // First try to find an active session, then fall back to the most recent terminal one
           const active = all.find((s) =>
             s.conversationId === context.conversationId
             && s.status !== 'completed' && s.status !== 'stopped' && s.status !== 'failed',
           );
-          targetSessionId = active?.id;
+          if (active) {
+            targetSessionId = active.id;
+          } else {
+            const terminal = all.find((s) => s.conversationId === context.conversationId);
+            targetSessionId = terminal?.id;
+          }
         }
-        if (!targetSessionId) return { isError: true, error: 'No active computer-use session found.' };
+        if (!targetSessionId) return { isError: true, error: 'No computer-use session found for this conversation.' };
 
-        const session = manager.sendGuidance(targetSessionId, payload.message);
-        if (!session) return { isError: true, error: 'Session not found or is in a terminal state.' };
+        // Try sending guidance first (works for active sessions)
+        const guidanceResult = manager.sendGuidance(targetSessionId, payload.message);
+        if (guidanceResult) {
+          return {
+            sessionId: guidanceResult.id,
+            status: guidanceResult.status,
+            action: 'guidance_queued',
+            pendingGuidanceCount: (guidanceResult.guidanceMessages ?? []).filter((m) => !m.injectedAt).length,
+          };
+        }
 
-        return {
-          sessionId: session.id,
-          status: session.status,
-          guidanceQueued: true,
-          pendingGuidanceCount: (session.guidanceMessages ?? []).filter((m) => !m.injectedAt).length,
-        };
+        // Session is terminal — continue it with the message as a new goal
+        const continued = await manager.continueSession(targetSessionId, payload.message);
+        if (continued) {
+          return {
+            sessionId: continued.id,
+            status: continued.status,
+            action: 'session_continued',
+            goal: continued.goal,
+          };
+        }
+
+        return { isError: true, error: 'Failed to send message or continue session.' };
       },
     });
   }

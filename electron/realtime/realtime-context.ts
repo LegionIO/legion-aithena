@@ -76,7 +76,7 @@ function formatMessagesAsConversation(
 /* ── Main builder ── */
 
 const CALL_INSTRUCTIONS = `## Call Instructions
-You are receiving a phone call. Start the conversation by naturally answering the call with a brief greeting, as if picking up a ringing phone. Vary your greeting naturally — you might say "Hello!", "Hey there!", "Good to hear from you!", etc. If you have conversation context above, you may reference it naturally in your greeting (e.g., "Hey! Were you wanting to continue talking about...?"). Keep your greeting brief and warm.`;
+You are receiving a phone call. Start the conversation by naturally answering the call with a brief greeting, as if picking up a ringing phone. Vary your greeting naturally. If you have conversation context above, you may reference it naturally in your greeting (e.g., "Hey! Were you wanting to continue talking about...?"). Keep your greeting brief and warm.`;
 
 export async function buildRealtimeMemoryContext(
   conversationId: string,

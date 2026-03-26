@@ -151,6 +151,7 @@ function toMastraTools(
 
         const ctx: ToolExecutionContext = {
           toolCallId,
+          conversationId,
           abortSignal: mergedAbortSignal,
           onProgress: (progress: ToolProgressEvent) => {
             hooks?.emitEvent?.({

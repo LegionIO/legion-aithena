@@ -51,6 +51,7 @@ type ComputerUseContextValue = {
   rejectAction: (sessionId: string, actionId: string, reason?: string) => Promise<void>;
   setSurface: (sessionId: string, surface: ComputerUseSurface) => Promise<void>;
   sendGuidance: (sessionId: string, text: string) => Promise<void>;
+  continueSession: (sessionId: string, newGoal: string) => Promise<ComputerSession | null>;
   checkLocalMacosPermissions: () => Promise<ComputerUsePermissions>;
   requestLocalMacosPermissions: () => Promise<ComputerUsePermissionRequestResult>;
   openLocalMacosPrivacySettings: (section?: ComputerUsePermissionSection) => Promise<OpenPrivacySettingsResult>;
@@ -68,6 +69,7 @@ const ComputerUseContext = createContext<ComputerUseContextValue>({
   rejectAction: async () => {},
   setSurface: async () => {},
   sendGuidance: async () => {},
+  continueSession: async () => null,
   checkLocalMacosPermissions: async () => ({ target: 'local-macos', accessibilityTrusted: false, screenRecordingGranted: false, automationGranted: false, helperReady: false }),
   requestLocalMacosPermissions: async () => ({ permissions: { target: 'local-macos', accessibilityTrusted: false, screenRecordingGranted: false, automationGranted: false, helperReady: false }, requested: [], openedSettings: [] }),
   openLocalMacosPrivacySettings: async () => ({ opened: null }),
@@ -302,6 +304,11 @@ export function ComputerUseProvider({ children }: { children: ReactNode }) {
     sendGuidance: async (sessionId, text) => {
       const session = await legion.computerUse.sendGuidance(sessionId, text) as ComputerSession | null;
       if (session) setSessions((current) => sortSessions([...current.filter((existing) => existing.id !== session.id), session]));
+    },
+    continueSession: async (sessionId, newGoal) => {
+      const session = await legion.computerUse.continueSession(sessionId, newGoal) as ComputerSession | null;
+      if (session) setSessions((current) => sortSessions([...current.filter((existing) => existing.id !== session.id), session]));
+      return session;
     },
     checkLocalMacosPermissions: async () => legion.computerUse.getLocalMacosPermissions() as Promise<ComputerUsePermissions>,
     requestLocalMacosPermissions: async () => legion.computerUse.requestLocalMacosPermissions() as Promise<ComputerUsePermissionRequestResult>,

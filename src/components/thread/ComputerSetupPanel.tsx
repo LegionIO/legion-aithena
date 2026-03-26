@@ -12,6 +12,7 @@ import type {
   ComputerUseSurface,
   ComputerUseTarget,
 } from '../../../shared/computer-use';
+import { isComputerSessionTerminal } from '../../../shared/computer-use';
 
 type ComputerSetupPanelProps = {
   conversationId: string | null;
@@ -57,6 +58,7 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
   const { config } = useConfig();
   const {
     startSession,
+    continueSession,
     checkLocalMacosPermissions,
     requestLocalMacosPermissions,
     openLocalMacosPrivacySettings,
@@ -156,22 +158,31 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
     }
   };
 
+  // Detect if there's a previous session that can be continued
+  const canContinue = Boolean(activeComputerSession && isComputerSessionTerminal(activeComputerSession.status));
+
   const handleStart = useCallback(() => {
     if (!canStart || !conversationId || !computerGoal.trim()) return;
     setIsStartingComputerSession(true);
-    void startSession(computerGoal.trim(), {
-      conversationId,
-      target: computerTarget,
-      surface: startSurface,
-      approvalMode: computerApprovalMode,
-      modelKey: selectedModelKey,
-      profileKey: selectedProfileKey,
-    }).then(() => {
+
+    // If there's a completed/stopped/failed session, continue it instead of starting new
+    const promise = canContinue && activeComputerSession
+      ? continueSession(activeComputerSession.id, computerGoal.trim())
+      : startSession(computerGoal.trim(), {
+          conversationId,
+          target: computerTarget,
+          surface: startSurface,
+          approvalMode: computerApprovalMode,
+          modelKey: selectedModelKey,
+          profileKey: selectedProfileKey,
+        });
+
+    void promise.then(() => {
       setComputerGoal('');
     }).finally(() => {
       setIsStartingComputerSession(false);
     });
-  }, [canStart, conversationId, computerGoal, startSession, computerTarget, startSurface, computerApprovalMode, selectedModelKey, selectedProfileKey]);
+  }, [canStart, canContinue, conversationId, computerGoal, startSession, continueSession, activeComputerSession, computerTarget, startSurface, computerApprovalMode, selectedModelKey, selectedProfileKey]);
 
   const handleGoalKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
@@ -198,7 +209,7 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
         value={computerGoal}
         onChange={(event) => setComputerGoal(event.target.value)}
         onKeyDown={handleGoalKeyDown}
-        placeholder={conversationId ? 'What should Interlink do on your computer? (Enter to start)' : 'Select a conversation first...'}
+        placeholder={!conversationId ? 'Select a conversation first...' : canContinue ? 'Continue the session with a follow-up... (Enter to resume)' : 'What should Interlink do on your computer? (Enter to start)'}
         disabled={!conversationId}
         rows={2}
         className="w-full resize-none rounded-xl border border-border/70 bg-card/80 px-3 py-2.5 text-sm outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -317,7 +328,7 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
           type="button"
           onClick={handleStart}
           disabled={!canStart}
-          title={!conversationId ? 'Select a conversation first' : !computerGoal.trim() ? 'Enter a goal first' : vmEndpointMissing ? 'Configure VM URL in settings' : isStartingComputerSession ? 'Starting...' : 'Start computer session'}
+          title={!conversationId ? 'Select a conversation first' : !computerGoal.trim() ? 'Enter a goal first' : vmEndpointMissing ? 'Configure VM URL in settings' : isStartingComputerSession ? (canContinue ? 'Resuming...' : 'Starting...') : canContinue ? 'Continue session' : 'Start computer session'}
           className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
         >
           {isStartingComputerSession ? (

@@ -255,8 +255,24 @@ function clampSidebarWidth(width: number) {
   return Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), SIDEBAR_MAX_WIDTH);
 }
 
-function getConversationDisplayTitle(conversation: Pick<ConversationRecord, 'title' | 'fallbackTitle'> | null) {
-  return conversation?.title?.trim() || conversation?.fallbackTitle?.trim() || 'New Conversation';
+function getConversationDisplayTitle(
+  conversation: Pick<ConversationRecord, 'title' | 'fallbackTitle'> | null,
+  computerSessions?: ComputerSession[],
+) {
+  // Prefer chat-based titles
+  const chatTitle = conversation?.title?.trim() || conversation?.fallbackTitle?.trim();
+  if (chatTitle) return chatTitle;
+
+  // Fall back to computer-use session goal if available
+  if (computerSessions?.length) {
+    const goal = computerSessions[0].goal;
+    if (goal) {
+      const truncated = goal.length > 60 ? goal.slice(0, 57).trimEnd() + '...' : goal;
+      return truncated;
+    }
+  }
+
+  return 'New Conversation';
 }
 
 function getComputerSessionForConversation(
@@ -267,8 +283,9 @@ function getComputerSessionForConversation(
   return sessionsByConversation.get(conversationId)?.[0];
 }
 
-function isDisposableNewConversation(conversation: ConversationRecord | null): boolean {
+function isDisposableNewConversation(conversation: ConversationRecord | null, hasComputerSessions = false): boolean {
   if (!conversation) return false;
+  if (hasComputerSessions) return false; // Never auto-delete conversations with computer-use history
 
   const hasMessages = Array.isArray(conversation.messages) && conversation.messages.length > 0;
   const hasTreeMessages = Array.isArray(conversation.messageTree) && conversation.messageTree.length > 0;
@@ -295,11 +312,12 @@ type ConversationsStore = {
 async function cleanupEmptyConversations(
   activeId?: string | null,
   existingList?: ConversationRecord[],
+  sessionsByConversation?: Map<string, ComputerSession[]>,
 ): Promise<string[]> {
   try {
     const list = existingList ?? (await legion.conversations.list()) as ConversationRecord[];
     const disposableIds = list
-      .filter((conv) => conv.id !== activeId && isDisposableNewConversation(conv))
+      .filter((conv) => conv.id !== activeId && isDisposableNewConversation(conv, Boolean(sessionsByConversation?.has(conv.id))))
       .map((conv) => conv.id);
 
     if (disposableIds.length === 0) return [];
@@ -322,6 +340,7 @@ function AppShell() {
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium');
   const [selectedProfileKey, setSelectedProfileKey] = useState<string | null>(null);
   const [fallbackEnabled, setFallbackEnabled] = useState(false);
+  const { sessionsByConversation: cuSessionsByConversation } = useComputerUse();
   // Track the primary model key of the currently selected profile so we can
   // restore it when auto-routing is re-enabled.
   const [profilePrimaryModelKey, setProfilePrimaryModelKey] = useState<string | null>(null);
@@ -347,7 +366,10 @@ function AppShell() {
         : null;
 
       setActiveConversationId(resolvedActiveId);
-      setActiveConversationTitle(getConversationDisplayTitle(conversation));
+      setActiveConversationTitle(getConversationDisplayTitle(
+        conversation,
+        resolvedActiveId ? cuSessionsByConversation.get(resolvedActiveId) : undefined,
+      ));
     };
 
     const loadActiveConversation = async () => {
@@ -364,7 +386,7 @@ function AppShell() {
         applyStore({ activeConversationId: id, conversations });
 
         // Clean up historical empty conversations on load
-        void cleanupEmptyConversations(id, list as ConversationRecord[]);
+        void cleanupEmptyConversations(id, list as ConversationRecord[], cuSessionsByConversation);
       } catch {
         if (!cancelled) {
           setActiveConversationId(null);
@@ -383,6 +405,19 @@ function AppShell() {
       unsubscribe();
     };
   }, []);
+
+  // Update conversation title when computer-use sessions become available
+  // (sessions load async, so the title may initially be "New Conversation")
+  useEffect(() => {
+    if (!activeConversationId || activeConversationTitle !== 'New Conversation') return;
+    const sessions = cuSessionsByConversation.get(activeConversationId);
+    if (sessions?.length) {
+      const goal = sessions[0].goal;
+      if (goal) {
+        setActiveConversationTitle(goal.length > 60 ? goal.slice(0, 57).trimEnd() + '...' : goal);
+      }
+    }
+  }, [activeConversationId, activeConversationTitle, cuSessionsByConversation]);
 
   useEffect(() => {
     if (!dragState) return undefined;
@@ -420,7 +455,8 @@ function AppShell() {
 
     try {
       const conversation = await legion.conversations.get(activeConversationId) as ConversationRecord | null;
-      if (!isDisposableNewConversation(conversation)) return;
+      const hasComputerSessions = cuSessionsByConversation.has(activeConversationId);
+      if (!isDisposableNewConversation(conversation, hasComputerSessions)) return;
 
       await legion.conversations.delete(activeConversationId);
       setActiveConversationId(null);
@@ -428,7 +464,7 @@ function AppShell() {
     } catch {
       // Leave the current conversation intact if cleanup fails.
     }
-  }, [activeConversationId]);
+  }, [activeConversationId, cuSessionsByConversation]);
 
   const handleSwitchConversation = useCallback(async (id: string) => {
     const { legion } = await import('@/lib/ipc-client');
@@ -437,7 +473,7 @@ function AppShell() {
     setSettingsOpen(false);
     setActiveConversationId(id);
     // Clean up any other empty conversations in the background
-    void cleanupEmptyConversations(id);
+    void cleanupEmptyConversations(id, undefined, cuSessionsByConversation);
   }, [cleanupAbandonedConversation]);
 
   const handleNewConversation = useCallback(async () => {
