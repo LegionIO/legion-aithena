@@ -174,6 +174,7 @@ type LegionAPI = {
     getSession: (sessionId: string) => Promise<unknown>;
     setSurface: (sessionId: string, surface: ComputerUseSurface) => Promise<unknown>;
     sendGuidance: (sessionId: string, text: string) => Promise<unknown>;
+    updateSessionSettings: (sessionId: string, settings: { modelKey?: string | null; profileKey?: string | null; fallbackEnabled?: boolean; reasoningEffort?: string }) => Promise<unknown>;
     continueSession: (sessionId: string, newGoal: string) => Promise<unknown>;
     markSessionsSeen: (conversationId: string) => Promise<unknown>;
     openSetupWindow: (conversationId?: string | null) => Promise<unknown>;

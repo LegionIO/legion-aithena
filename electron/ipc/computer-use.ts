@@ -122,6 +122,7 @@ export function registerComputerUseHandlers(
   ipcMain.handle('computer-use:get-session', (_event, sessionId: string) => manager.getSession(sessionId));
   ipcMain.handle('computer-use:set-surface', (_event, sessionId: string, surface: ComputerUseSurface) => manager.setSurface(sessionId, surface));
   ipcMain.handle('computer-use:send-guidance', (_event, sessionId: string, text: string) => manager.sendGuidance(sessionId, text));
+  ipcMain.handle('computer-use:update-session-settings', (_event, sessionId: string, settings: { modelKey?: string | null; profileKey?: string | null; fallbackEnabled?: boolean; reasoningEffort?: string }) => manager.updateSessionSettings(sessionId, settings as Parameters<typeof manager.updateSessionSettings>[1]));
   ipcMain.handle('computer-use:continue-session', (_event, sessionId: string, newGoal: string) => manager.continueSession(sessionId, newGoal));
   ipcMain.handle('computer-use:mark-sessions-seen', (_event, conversationId: string) => { manager.markConversationSessionsSeen(conversationId); return { ok: true }; });
   ipcMain.handle('computer-use:open-setup-window', (_event, conversationId?: string | null) => manager.openSetupWindow(conversationId));
