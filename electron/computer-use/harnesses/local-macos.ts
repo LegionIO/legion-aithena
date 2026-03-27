@@ -12,9 +12,11 @@ import { makeComputerUseId, nowIso } from '../../../shared/computer-use.js';
 import type { LegionConfig } from '../../config/schema.js';
 import {
   buildDisplayLayout,
+  buildSwiftFallbackEnv,
   getComputerUsePermissions,
   getLocalMacDesktopSize,
   getLocalMacPointerPosition,
+  resolveCompiledHelperBinary,
   resolveMaterializedHelperPath,
   runLocalMacMouseCommand,
 } from '../permissions.js';
@@ -61,10 +63,6 @@ export type LocalMacosTakeoverEvent = {
   timestampMs: number;
 };
 
-function resolveMonitorHelperPath(): string {
-  return resolveMaterializedHelperPath();
-}
-
 function parseMonitorLine(line: string): LocalMacosTakeoverEvent | null {
   if (!line.trim()) return null;
   try {
@@ -107,10 +105,21 @@ export function startLocalMacosTakeoverMonitor(params: {
   onEvent: (event: LocalMacosTakeoverEvent) => void;
   onError?: (error: string) => void;
 }): LocalMacosTakeoverMonitorHandle {
-  const helperPath = resolveMonitorHelperPath();
-  const child = spawn('xcrun', ['swift', helperPath, LOCAL_MACOS_HELPER_COMMANDS.monitor], {
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+  // Prefer the pre-compiled binary; fall back to xcrun swift interpretation
+  const binaryPath = resolveCompiledHelperBinary();
+  let child: ChildProcessWithoutNullStreams;
+
+  if (binaryPath) {
+    child = spawn(binaryPath, [LOCAL_MACOS_HELPER_COMMANDS.monitor], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  } else {
+    const helperPath = resolveMaterializedHelperPath();
+    child = spawn('xcrun', ['swift', helperPath, LOCAL_MACOS_HELPER_COMMANDS.monitor], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: buildSwiftFallbackEnv(),
+    });
+  }
 
   let stdoutBuffer = '';
   child.stdout.on('data', (chunk) => {
