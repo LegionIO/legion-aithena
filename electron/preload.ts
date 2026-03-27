@@ -247,6 +247,7 @@ const legionAPI = {
     getSession: (sessionId: string) => ipcRenderer.invoke('computer-use:get-session', sessionId),
     setSurface: (sessionId: string, surface: ComputerUseSurface) => ipcRenderer.invoke('computer-use:set-surface', sessionId, surface),
     sendGuidance: (sessionId: string, text: string) => ipcRenderer.invoke('computer-use:send-guidance', sessionId, text),
+    updateSessionSettings: (sessionId: string, settings: { modelKey?: string | null; profileKey?: string | null; fallbackEnabled?: boolean; reasoningEffort?: string }) => ipcRenderer.invoke('computer-use:update-session-settings', sessionId, settings),
     continueSession: (sessionId: string, newGoal: string) => ipcRenderer.invoke('computer-use:continue-session', sessionId, newGoal),
     markSessionsSeen: (conversationId: string) => ipcRenderer.invoke('computer-use:mark-sessions-seen', conversationId),
     openSetupWindow: (conversationId?: string | null) => ipcRenderer.invoke('computer-use:open-setup-window', conversationId),

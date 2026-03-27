@@ -45,7 +45,7 @@ import { ModelSelector } from './ModelSelector';
 import { ReasoningEffortSelector, type ReasoningEffort } from './ReasoningEffortSelector';
 import { ProfileSelector } from './ProfileSelector';
 import { FallbackToggle } from './FallbackToggle';
-import { FallbackBanner } from './FallbackBanner';
+import { FallbackBanner, ComputerUseFallbackBanner } from './FallbackBanner';
 import { CallOverlay } from './CallOverlay';
 import { ComputerSessionPanel } from './ComputerSessionPanel';
 import { ComputerSetupPanel } from './ComputerSetupPanel';
@@ -81,6 +81,7 @@ export const Thread: FC<{
     <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col overflow-hidden">
       <SearchBar visible={searchOpen} onClose={() => setSearchOpen(false)} viewportRef={viewportRef} />
       <FallbackBanner />
+      <ComputerUseFallbackBanner />
       <ThreadModeTabs mode={mode} onChange={onChangeMode} />
       {mode === 'chat' ? (
         <ThreadPrimitive.Viewport ref={viewportRef} className="relative min-h-0 flex-1 overflow-y-auto">
@@ -196,17 +197,19 @@ const ComputerTabSurface: FC = () => {
 
   if (!activeComputerSession) {
     return (
-      <div className="min-h-0 flex-1 overflow-hidden px-6 py-4">
-        <div className="mx-auto flex h-full w-full max-w-5xl min-h-0 flex-col">
-          <div className="flex min-h-full flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/20 px-6 py-8">
-            <div className="max-w-md text-center">
-              <MonitorIcon className="mx-auto h-8 w-8 text-muted-foreground/40" />
-              <div className="mt-3 text-sm font-medium">{activeConversationId ? 'No Active Session' : 'Select a Conversation'}</div>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                {activeConversationId
-                  ? 'Configure a goal and start a session using the controls below.'
-                  : 'Choose or create a conversation from the sidebar first.'}
-              </p>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="px-6 py-4">
+          <div className="mx-auto flex w-full max-w-5xl min-h-0 flex-col">
+            <div className="flex min-h-full flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/20 px-6 py-8">
+              <div className="max-w-md text-center">
+                <MonitorIcon className="mx-auto h-8 w-8 text-muted-foreground/40" />
+                <div className="mt-3 text-sm font-medium">{activeConversationId ? 'No Active Session' : 'Select a Conversation'}</div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {activeConversationId
+                    ? 'Configure a goal and start a session using the controls below.'
+                    : 'Choose or create a conversation from the sidebar first.'}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -215,9 +218,9 @@ const ComputerTabSurface: FC = () => {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-hidden px-6 py-4">
-      <div className="mx-auto flex h-full w-full max-w-5xl min-h-0 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+    <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="px-6 py-4">
+        <div className="mx-auto flex w-full max-w-5xl min-h-0 flex-col">
           <ComputerSessionPanel session={activeComputerSession} />
         </div>
       </div>

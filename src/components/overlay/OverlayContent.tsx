@@ -226,6 +226,25 @@ export const OverlayContent: FC<{ state: ComputerOverlayState }> = ({ state }) =
             )}
           </div>
 
+          {/* Status message — shown prominently above progress */}
+          {state.statusMessage && !isPaused && !isFailed && (() => {
+            const isWarning = /retry|retrying|switched|fallback|failed|error/i.test(state.statusMessage ?? '');
+            return (
+              <div className={`mt-2.5 flex items-center gap-2 rounded-lg border px-3 py-2 ${
+                isWarning
+                  ? 'border-amber-400/30 bg-amber-500/10'
+                  : 'border-purple-400/30 bg-purple-500/10'
+              }`}>
+                {isWarning
+                  ? <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
+                  : <Monitor className="h-3.5 w-3.5 flex-shrink-0 text-purple-400" />}
+                <span className={`text-[11px] font-medium ${isWarning ? 'text-amber-200' : 'text-purple-200'}`}>
+                  {state.statusMessage}
+                </span>
+              </div>
+            );
+          })()}
+
           {/* Progress: checkpoints row + last action */}
           {(totalCheckpoints > 0 || state.lastActionSummary || state.planSummary) && (
             <div className="mt-3 flex items-start gap-4 border-t border-white/8 pt-3">
@@ -261,11 +280,6 @@ export const OverlayContent: FC<{ state: ComputerOverlayState }> = ({ state }) =
                   <div className="text-[10px] text-white/40 truncate">
                     <span className="text-white/25">Plan: </span>
                     {state.planSummary}
-                  </div>
-                )}
-                {state.statusMessage && !isPaused && !isFailed && (
-                  <div className="text-[10px] text-amber-300/50 truncate">
-                    {state.statusMessage}
                   </div>
                 )}
               </div>

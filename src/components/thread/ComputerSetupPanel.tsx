@@ -203,6 +203,8 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
           approvalMode: computerApprovalMode,
           modelKey: selectedModelKey,
           profileKey: selectedProfileKey,
+          fallbackEnabled,
+          reasoningEffort,
         });
 
     void promise.then(() => {
