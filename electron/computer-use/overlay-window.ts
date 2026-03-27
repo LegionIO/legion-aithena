@@ -1,6 +1,17 @@
-import { BrowserWindow, ipcMain, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, screen } from 'electron';
 import { join } from 'node:path';
 import type { ComputerDisplayLayout, ComputerOverlayState } from '../../shared/computer-use.js';
+
+/** Ensure the app dock icon stays visible on macOS. */
+function ensureDockVisible(): void {
+  try {
+    if (process.platform === 'darwin' && app.dock) {
+      void app.dock.show();
+    }
+  } catch {
+    // Dock API may not be available in all environments
+  }
+}
 
 // IPC handler for overlay mouse region toggling.
 // When the renderer detects the mouse entering the clickable banner area
@@ -114,6 +125,7 @@ function createSingleOverlay(
 
   win.once('ready-to-show', () => {
     win.showInactive();
+    ensureDockVisible();
   });
 
   win.on('closed', () => {
@@ -260,6 +272,7 @@ export function showOverlayAfterCapture(sessionId: string): void {
       win.showInactive();
     }
   }
+  ensureDockVisible();
 }
 
 /**
