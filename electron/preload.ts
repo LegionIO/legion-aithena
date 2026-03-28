@@ -253,6 +253,7 @@ const legionAPI = {
     openSetupWindow: (conversationId?: string | null) => ipcRenderer.invoke('computer-use:open-setup-window', conversationId),
     getLocalMacosPermissions: () => ipcRenderer.invoke('computer-use:get-local-macos-permissions'),
     requestLocalMacosPermissions: () => ipcRenderer.invoke('computer-use:request-local-macos-permissions'),
+    requestSingleLocalMacosPermission: (section: ComputerUsePermissionSection) => ipcRenderer.invoke('computer-use:request-single-local-macos-permission', section),
     openLocalMacosPrivacySettings: (section?: ComputerUsePermissionSection) => ipcRenderer.invoke('computer-use:open-local-macos-privacy-settings', section),
     probeInputMonitoring: (timeoutMs?: number) => ipcRenderer.invoke('computer-use:probe-input-monitoring', timeoutMs) as Promise<{ inputMonitoringGranted: boolean }>,
     checkFullScreenApps: () => ipcRenderer.invoke('computer-use:check-fullscreen-apps') as Promise<{ apps: string[]; problematicApps: string[] }>,

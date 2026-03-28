@@ -28,6 +28,7 @@ import {
   getComputerUsePermissions,
   openLocalMacosPrivacySettings as openLocalMacosPrivacySettingsExternal,
   requestLocalMacosPermissions as requestLocalMacosPermissionsFlow,
+  requestSinglePermission as requestSinglePermissionExternal,
 } from './permissions.js';
 import { startLocalMacosTakeoverMonitor, stopLocalMacosTakeoverMonitor, type LocalMacosTakeoverEvent } from './takeover-monitor.js';
 
@@ -424,6 +425,11 @@ export class ComputerUseSessionManager extends EventEmitter {
     });
     await this.syncLocalMacPermissionState(result);
     return result;
+  }
+
+  async requestSingleLocalMacosPermission(section: ComputerUsePermissionSection): Promise<ComputerUsePermissions> {
+    const openSettings = this.getConfig().computerUse.localMacos.autoOpenPrivacySettings;
+    return requestSinglePermissionExternal(section, { openSettings });
   }
 
   async getLocalMacosPermissions(): Promise<ComputerUsePermissions> {

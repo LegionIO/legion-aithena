@@ -180,6 +180,7 @@ type LegionAPI = {
     openSetupWindow: (conversationId?: string | null) => Promise<unknown>;
     getLocalMacosPermissions: () => Promise<ComputerUsePermissions>;
     requestLocalMacosPermissions: () => Promise<ComputerUsePermissionRequestResult>;
+    requestSingleLocalMacosPermission: (section: ComputerUsePermissionSection) => Promise<ComputerUsePermissions>;
     openLocalMacosPrivacySettings: (section?: ComputerUsePermissionSection) => Promise<{ opened: ComputerUsePermissionSection | null }>;
     probeInputMonitoring: (timeoutMs?: number) => Promise<{ inputMonitoringGranted: boolean }>;
     checkFullScreenApps: () => Promise<{ apps: string[]; problematicApps: string[] }>;
