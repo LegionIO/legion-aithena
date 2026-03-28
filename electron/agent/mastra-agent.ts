@@ -12,7 +12,7 @@ export type { ReasoningEffort } from './model-catalog.js';
 
 export type StreamEvent = {
   conversationId: string;
-  type: 'text-delta' | 'observer-message' | 'tool-call' | 'tool-result' | 'tool-error' | 'tool-progress' | 'error' | 'done' | 'compaction' | 'context-usage' | 'model-fallback';
+  type: 'text-delta' | 'observer-message' | 'tool-call' | 'tool-result' | 'tool-error' | 'tool-progress' | 'tool-compaction' | 'error' | 'done' | 'compaction' | 'context-usage' | 'model-fallback';
   text?: string;
   toolCallId?: string;
   toolName?: string;
@@ -22,6 +22,12 @@ export type StreamEvent = {
   data?: unknown;
   startedAt?: string;
   finishedAt?: string;
+  observerInitiated?: boolean;
+  compaction?: {
+    originalContent: string;
+    wasCompacted: boolean;
+    extractionDurationMs: number;
+  };
 };
 
 function sleep(ms: number): Promise<void> {
@@ -133,7 +139,9 @@ function toMastraTools(
       description: tool.description,
       inputSchema: toMastraInputSchema(tool.inputSchema),
       execute: async (input, options) => {
-        const toolCallId = typeof (options as any)?.toolCallId === 'string' ? (options as any).toolCallId : `tc-${Date.now()}`;
+        const toolCallId = typeof (options as any)?.toolCallId === 'string'
+          ? (options as any).toolCallId
+          : `tc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const localAbortController = new AbortController();
         const cancel = (): void => {
           if (!localAbortController.signal.aborted) {

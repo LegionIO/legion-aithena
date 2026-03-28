@@ -556,6 +556,12 @@ const ToolFallback: FC<{
   isError?: boolean;
   startedAt?: string;
   finishedAt?: string;
+  originalResult?: unknown;
+  compactionMeta?: {
+    wasCompacted: boolean;
+    extractionDurationMs: number;
+  };
+  compactionPhase?: 'start' | 'complete' | null;
   liveOutput?: {
     stdout?: string;
     stderr?: string;
@@ -591,6 +597,9 @@ const ToolFallback: FC<{
           isError: props.isError,
           startedAt: props.startedAt,
           finishedAt: props.finishedAt,
+          originalResult: props.originalResult,
+          compactionMeta: props.compactionMeta,
+          compactionPhase: props.compactionPhase,
           liveOutput: props.liveOutput,
         }}
       />
