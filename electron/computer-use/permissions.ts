@@ -347,6 +347,58 @@ export async function requestLocalMacosPermissions(options?: {
   };
 }
 
+/**
+ * Request a single permission section and return updated permission state.
+ *
+ * Unlike `requestLocalMacosPermissions()` which walks through all missing
+ * permissions sequentially, this targets exactly one section — useful for
+ * per-permission "Grant" buttons in the UI.
+ */
+export async function requestSinglePermission(
+  section: ComputerUsePermissionSection,
+  options?: { openSettings?: boolean },
+): Promise<ComputerUsePermissions> {
+  switch (section) {
+    case 'accessibility':
+      if (process.platform === 'darwin') {
+        try {
+          systemPreferences.isTrustedAccessibilityClient(true);
+        } catch {
+          // Ignore prompt failures — re-check below.
+        }
+      }
+      break;
+    case 'screen-recording':
+      await requestScreenRecordingPermission();
+      break;
+    case 'automation':
+      await requestAutomationPermission();
+      break;
+    case 'input-monitoring':
+      // Input Monitoring cannot be programmatically requested — the user must
+      // grant it in System Settings. Open the pane directly.
+      await openLocalMacosPrivacySettings('input-monitoring');
+      break;
+  }
+
+  const permissions = await getComputerUsePermissions();
+
+  // If the permission is still missing and the caller wants to open Settings,
+  // deep-link to the relevant pane.
+  if (options?.openSettings !== false) {
+    const stillMissing =
+      (section === 'accessibility' && !permissions.accessibilityTrusted) ||
+      (section === 'screen-recording' && !permissions.screenRecordingGranted) ||
+      (section === 'automation' && !permissions.automationGranted) ||
+      (section === 'input-monitoring' && !permissions.inputMonitoringGranted);
+    if (stillMissing) {
+      await openLocalMacosPrivacySettings(section);
+    }
+  }
+
+  return permissions;
+}
+
 export async function runLocalMacMouseCommand(args: string[]): Promise<LocalMacosHelperResponse> {
   const result = await runLocalMacHelper(args);
   if (!result.ok) {

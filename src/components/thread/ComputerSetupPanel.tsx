@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, type FC, type KeyboardEvent } from 'react';
-import { ExternalLinkIcon, LoaderIcon, MonitorIcon, ShieldCheckIcon, ShieldAlertIcon, MaximizeIcon, MousePointerIcon } from 'lucide-react';
+import { ExternalLinkIcon, LoaderIcon, MonitorIcon, ShieldCheckIcon, MaximizeIcon } from 'lucide-react';
 import { useConfig } from '@/providers/ConfigProvider';
 import { useComputerUse } from '@/providers/ComputerUseProvider';
 import { legion } from '@/lib/ipc-client';
@@ -7,6 +7,7 @@ import { ModelSelector } from './ModelSelector';
 import { ProfileSelector } from './ProfileSelector';
 import { FallbackToggle } from './FallbackToggle';
 import { ReasoningEffortSelector, type ReasoningEffort } from './ReasoningEffortSelector';
+import { PermissionChecklist } from './PermissionChecklist';
 import type {
   ComputerSession,
   ComputerUsePermissions,
@@ -61,6 +62,7 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
     continueSession,
     checkLocalMacosPermissions,
     requestLocalMacosPermissions,
+    requestSingleLocalMacosPermission,
     openLocalMacosPrivacySettings,
     probeInputMonitoring,
   } = useComputerUse();
@@ -98,14 +100,6 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
     && localPermissionState.screenRecordingGranted
     && localPermissionState.automationGranted
     && localPermissionState.inputMonitoringGranted;
-  // When all standard permissions pass but only input monitoring failed,
-  // show a dedicated "move your mouse" probe UI instead of the generic missing permissions message.
-  const onlyInputMonitoringMissing = localPermissionState?.target === 'local-macos'
-    && localPermissionState.helperReady
-    && localPermissionState.accessibilityTrusted
-    && localPermissionState.screenRecordingGranted
-    && localPermissionState.automationGranted
-    && !localPermissionState.inputMonitoringGranted;
   const showLocalMacPreflight = computerTarget === 'local-macos' && (showLocalPermissionSpinner || !localPermissionAuthorized);
   const canStart = Boolean(conversationId) && Boolean(computerGoal.trim()) && !isStartingComputerSession;
 
@@ -213,6 +207,11 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
     }
   };
 
+  const handleRequestSinglePermission = async (section: Parameters<typeof requestSingleLocalMacosPermission>[0]) => {
+    const updated = await requestSingleLocalMacosPermission(section);
+    setProbedLocalPermissionState(updated);
+  };
+
   // Detect if there's a previous session that can be continued
   const canContinue = Boolean(activeComputerSession && isComputerSessionTerminal(activeComputerSession.status));
 
@@ -274,82 +273,23 @@ export const ComputerSetupPanel: FC<ComputerSetupPanelProps> = ({
 
       {/* Permission alerts — only when there's a real problem */}
       {showLocalMacPreflight && (
-        <div className="flex items-start gap-2.5 rounded-xl border border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
-          {isCheckingLocalPermissions && showLocalPermissionSpinner ? (
-            <div className="inline-flex items-center gap-2">
-              <LoaderIcon className="h-3.5 w-3.5 animate-spin shrink-0" />
-              <span>Checking permissions...</span>
-            </div>
-          ) : localPermissionAuthorized ? (
-            <div className="inline-flex items-center gap-1.5">
-              <ShieldCheckIcon className="h-3.5 w-3.5 text-green-500 shrink-0" />
-              <span>Local Mac permissions granted</span>
-            </div>
-          ) : onlyInputMonitoringMissing ? (
-            <div className="flex-1">
-              <div className="inline-flex items-center gap-1.5 font-medium">
-                {isProbingInputMonitoring
-                  ? <LoaderIcon className="h-3.5 w-3.5 animate-spin shrink-0" />
-                  : <MousePointerIcon className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                }
-                <span>{isProbingInputMonitoring ? 'Checking takeover monitor...' : 'Takeover monitor check'}</span>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground/80">
-                {isProbingInputMonitoring
-                  ? 'Move your mouse or press any key to verify the takeover monitor can detect your input.'
-                  : inputMonitoringProbeAttempts === 0
-                    ? 'Move your mouse or press a key, then tap Verify below to confirm the takeover monitor works.'
-                    : 'No input detected. Ensure Input Monitoring is enabled for Interlink in System Settings \u203A Privacy & Security \u203A Input Monitoring, then try again.'
-                }
-              </p>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => { void handleRetryInputMonitoringProbe(); }}
-                  disabled={isProbingInputMonitoring}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-card/70 px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isProbingInputMonitoring ? <LoaderIcon className="h-3 w-3 animate-spin" /> : <MousePointerIcon className="h-3 w-3" />}
-                  <span>{isProbingInputMonitoring ? 'Listening...' : 'Verify'}</span>
-                </button>
-                {inputMonitoringProbeAttempts > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => { void openLocalMacosPrivacySettings('input-monitoring'); }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-card/70 px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/50"
-                  >
-                    Open Settings
-                  </button>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1">
-              <div className="inline-flex items-center gap-1.5 font-medium">
-                <ShieldAlertIcon className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                <span>Missing local permissions</span>
-              </div>
-              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => { void handleRequestLocalPermissions(); }}
-                  disabled={isRequestingLocalPermissions}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-card/70 px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isRequestingLocalPermissions ? <LoaderIcon className="h-3 w-3 animate-spin" /> : null}
-                  <span>{isRequestingLocalPermissions ? 'Requesting...' : 'Request Access'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { void openLocalMacosPrivacySettings(); }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-border/70 bg-card/70 px-2.5 py-1 text-[11px] font-medium text-foreground transition-colors hover:bg-muted/50"
-                >
-                  Open Settings
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+        isCheckingLocalPermissions && showLocalPermissionSpinner ? (
+          <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+            <LoaderIcon className="h-3.5 w-3.5 animate-spin shrink-0" />
+            <span>Checking permissions...</span>
+          </div>
+        ) : localPermissionState ? (
+          <PermissionChecklist
+            permissions={localPermissionState}
+            isRequestingAll={isRequestingLocalPermissions}
+            isProbingInputMonitoring={isProbingInputMonitoring}
+            inputMonitoringProbeAttempts={inputMonitoringProbeAttempts}
+            onRequestAll={() => { void handleRequestLocalPermissions(); }}
+            onRequestSingle={handleRequestSinglePermission}
+            onProbeInputMonitoring={() => { void handleRetryInputMonitoringProbe(); }}
+            onOpenSettings={(section) => { void openLocalMacosPrivacySettings(section); }}
+          />
+        ) : null
       )}
 
       {/* Full-screen app warning — only for local-macos target */}
