@@ -219,7 +219,7 @@ export type ToolCompactionResult = {
  * Estimate token count from a string. Uses the model-aware tokenizer when
  * available, otherwise falls back to a rough chars/4 heuristic.
  */
-function estimateTokens(text: string, modelName?: string): number {
+export function estimateToolTokens(text: string, modelName?: string): number {
   if (modelName) {
     const tokenization = resolveConversationTokenization(modelName);
     if (tokenization.encoding) {
@@ -240,7 +240,7 @@ function truncateToTokenBudget(
   modelName?: string,
 ): string {
   if (!content) return content;
-  const totalTokens = estimateTokens(content, modelName);
+  const totalTokens = estimateToolTokens(content, modelName);
   if (totalTokens <= maxTokens) return content;
 
   const ratio = Math.max(0.05, maxTokens / totalTokens);
@@ -312,7 +312,7 @@ export async function compactToolResult(
     return { content, wasCompacted: false };
   }
 
-  if (estimateTokens(content, modelName) <= settings.triggerTokens) {
+  if (estimateToolTokens(content, modelName) <= settings.triggerTokens) {
     return { content, wasCompacted: false };
   }
 
