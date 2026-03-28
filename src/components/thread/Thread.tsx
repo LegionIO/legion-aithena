@@ -34,7 +34,7 @@ import { useAttachments } from '@/providers/AttachmentContext';
 import { useBranchNav } from '@/providers/RuntimeProvider';
 import { useConfig } from '@/providers/ConfigProvider';
 import { useRealtime } from '@/providers/RealtimeProvider';
-import { isDictationSupportedForProvider, createUnifiedDictationAdapter, type DictationAdapterTypes, type AudioProvider } from '@/lib/audio/speech-adapters';
+import { isDictationSupportedForProvider, createUnifiedDictationAdapter, type DictationSession, type AudioProvider } from '@/lib/audio/speech-adapters';
 import { MarkdownText } from './MarkdownText';
 import { ToolCallDisplay } from './ToolGroup';
 import { SubAgentInline } from './SubAgentInline';
@@ -557,6 +557,12 @@ const ToolFallback: FC<{
   isError?: boolean;
   startedAt?: string;
   finishedAt?: string;
+  originalResult?: unknown;
+  compactionMeta?: {
+    wasCompacted: boolean;
+    extractionDurationMs: number;
+  };
+  compactionPhase?: 'start' | 'complete' | null;
   liveOutput?: {
     stdout?: string;
     stderr?: string;
@@ -592,6 +598,9 @@ const ToolFallback: FC<{
           isError: props.isError,
           startedAt: props.startedAt,
           finishedAt: props.finishedAt,
+          originalResult: props.originalResult,
+          compactionMeta: props.compactionMeta,
+          compactionPhase: props.compactionPhase,
           liveOutput: props.liveOutput,
         }}
       />
@@ -858,7 +867,7 @@ const DictationButton: FC = () => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [devices, setDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
   const [levels, setLevels] = useState<Record<string, number>>({});
-  const sessionRef = useRef<DictationAdapterTypes.Session | null>(null);
+  const sessionRef = useRef<DictationSession | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const levelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -970,7 +979,7 @@ const DictationButton: FC = () => {
         }
       });
 
-      const extSession = session as DictationAdapterTypes.Session & {
+      const extSession = session as DictationSession & {
         onError?: (cb: (err: string) => void) => void;
       };
       extSession.onError?.((err) => {

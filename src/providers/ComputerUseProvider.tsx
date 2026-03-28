@@ -67,6 +67,8 @@ type ComputerUseContextValue = {
   checkLocalMacosPermissions: () => Promise<ComputerUsePermissions>;
   requestLocalMacosPermissions: () => Promise<ComputerUsePermissionRequestResult>;
   openLocalMacosPrivacySettings: (section?: ComputerUsePermissionSection) => Promise<OpenPrivacySettingsResult>;
+  requestSingleLocalMacosPermission: (section: ComputerUsePermissionSection) => Promise<ComputerUsePermissions>;
+  probeInputMonitoring: (timeoutMs?: number) => Promise<boolean>;
 };
 
 const ComputerUseContext = createContext<ComputerUseContextValue>({
@@ -85,9 +87,11 @@ const ComputerUseContext = createContext<ComputerUseContextValue>({
   updateSessionSettings: async () => {},
   fallbackBanner: null,
   dismissFallbackBanner: () => {},
-  checkLocalMacosPermissions: async () => ({ target: 'local-macos', accessibilityTrusted: false, screenRecordingGranted: false, automationGranted: false, helperReady: false }),
-  requestLocalMacosPermissions: async () => ({ permissions: { target: 'local-macos', accessibilityTrusted: false, screenRecordingGranted: false, automationGranted: false, helperReady: false }, requested: [], openedSettings: [] }),
+  checkLocalMacosPermissions: async () => ({ target: 'local-macos', accessibilityTrusted: false, screenRecordingGranted: false, automationGranted: false, inputMonitoringGranted: false, helperReady: false }),
+  requestLocalMacosPermissions: async () => ({ permissions: { target: 'local-macos', accessibilityTrusted: false, screenRecordingGranted: false, automationGranted: false, inputMonitoringGranted: false, helperReady: false }, requested: [], openedSettings: [] }),
   openLocalMacosPrivacySettings: async () => ({ opened: null }),
+  requestSingleLocalMacosPermission: async () => ({ target: 'local-macos', accessibilityTrusted: false, screenRecordingGranted: false, automationGranted: false, inputMonitoringGranted: false, helperReady: false }),
+  probeInputMonitoring: async () => false,
 });
 
 function sortSessions(sessions: ComputerSession[]): ComputerSession[] {
@@ -356,6 +360,13 @@ export function ComputerUseProvider({ children }: { children: ReactNode }) {
     requestLocalMacosPermissions: async () => legion.computerUse.requestLocalMacosPermissions() as Promise<ComputerUsePermissionRequestResult>,
     openLocalMacosPrivacySettings: async (section) => {
       return legion.computerUse.openLocalMacosPrivacySettings(section) as Promise<OpenPrivacySettingsResult>;
+    },
+    requestSingleLocalMacosPermission: async (section) => {
+      return legion.computerUse.requestSingleLocalMacosPermission(section) as Promise<ComputerUsePermissions>;
+    },
+    probeInputMonitoring: async (timeoutMs) => {
+      const result = await legion.computerUse.probeInputMonitoring(timeoutMs);
+      return result.inputMonitoringGranted;
     },
   }), [sessions, frameHistory, fallbackBanner, dismissFallbackBanner]);
 

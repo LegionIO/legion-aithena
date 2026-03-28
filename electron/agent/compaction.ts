@@ -4,7 +4,6 @@ import {
   resolveConversationTokenization,
   serializeForTokenCounting,
 } from './tokenization.js';
-import type { ConversationTokenizationInfo } from './tokenization.js';
 import type { LLMModelConfig } from './model-catalog.js';
 import { createLanguageModelFromConfig } from './language-model.js';
 
@@ -156,11 +155,12 @@ export async function compactConversationPrefix(
   // Generate summary
   const { Agent } = await import('@mastra/core/agent');
   const model = await createLanguageModelFromConfig(modelConfig);
+  type AgentConfig = ConstructorParameters<typeof Agent>[0];
   const agent = new Agent({
     id: `compaction-${Date.now()}`,
     name: 'compaction-agent',
     instructions: COMPACTION_SYSTEM_PROMPT,
-    model: model as any,
+    model: model as AgentConfig['model'],
   });
 
   const prompt = [
@@ -219,7 +219,7 @@ export type ToolCompactionResult = {
  * Estimate token count from a string. Uses the model-aware tokenizer when
  * available, otherwise falls back to a rough chars/4 heuristic.
  */
-function estimateTokens(text: string, modelName?: string): number {
+export function estimateToolTokens(text: string, modelName?: string): number {
   if (modelName) {
     const tokenization = resolveConversationTokenization(modelName);
     if (tokenization.encoding) {
@@ -240,7 +240,7 @@ function truncateToTokenBudget(
   modelName?: string,
 ): string {
   if (!content) return content;
-  const totalTokens = estimateTokens(content, modelName);
+  const totalTokens = estimateToolTokens(content, modelName);
   if (totalTokens <= maxTokens) return content;
 
   const ratio = Math.max(0.05, maxTokens / totalTokens);
@@ -268,11 +268,12 @@ async function aiExtractRelevantInfo(
   try {
     const { Agent } = await import('@mastra/core/agent');
     const model = await createLanguageModelFromConfig(modelConfig);
+    type AgentConfig = ConstructorParameters<typeof Agent>[0];
     const agent = new Agent({
       id: `tool-compact-${Date.now()}`,
       name: 'tool-compaction-agent',
       instructions: 'Summarize only the information needed to answer the user request. Keep important IDs, names, and values. Omit boilerplate and repeated metadata. If output is JSON-like, preserve key fields in compact form.',
-      model: model as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+      model: model as AgentConfig['model'],
     });
 
     const prompt = [
@@ -312,7 +313,7 @@ export async function compactToolResult(
     return { content, wasCompacted: false };
   }
 
-  if (estimateTokens(content, modelName) <= settings.triggerTokens) {
+  if (estimateToolTokens(content, modelName) <= settings.triggerTokens) {
     return { content, wasCompacted: false };
   }
 
