@@ -18,6 +18,7 @@ mac:
     CFBundleName: Legion Interlink
     NSMicrophoneUsageDescription: "Legion Interlink uses the microphone for voice dictation (speech-to-text)."
     NSAppleEventsUsageDescription: "Legion Interlink uses Apple Events to activate apps and inspect focused windows during Local Mac computer control."
+    NSScreenCaptureUsageDescription: "Legion Interlink captures your screen to enable Local Mac computer control and allow the AI to see what's on your display."
   target:
     - target: dmg
       arch:

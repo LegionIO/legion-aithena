@@ -9,7 +9,7 @@ import type {
   ComputerUseSurface,
 } from '../../shared/computer-use.js';
 import { getComputerUseManager } from '../computer-use/service.js';
-import { getLocalMacDisplayLayout } from '../computer-use/permissions.js';
+import { getLocalMacDisplayLayout, probeInputMonitoring } from '../computer-use/permissions.js';
 import type { LegionConfig } from '../config/schema.js';
 import { readConversationStore, writeConversationStore, broadcastConversationChange } from './conversations.js';
 
@@ -129,7 +129,12 @@ export function registerComputerUseHandlers(
   ipcMain.handle('computer-use:open-setup-window', (_event, conversationId?: string | null) => manager.openSetupWindow(conversationId));
   ipcMain.handle('computer-use:get-local-macos-permissions', () => manager.getLocalMacosPermissions());
   ipcMain.handle('computer-use:request-local-macos-permissions', () => manager.requestLocalMacosPermissions());
+  ipcMain.handle('computer-use:request-single-local-macos-permission', (_event, section: ComputerUsePermissionSection) => manager.requestSingleLocalMacosPermission(section));
   ipcMain.handle('computer-use:open-local-macos-privacy-settings', (_event, section?: ComputerUsePermissionSection) => manager.openLocalMacosPrivacySettings(section));
+  ipcMain.handle('computer-use:probe-input-monitoring', async (_event, timeoutMs?: number) => {
+    const granted = await probeInputMonitoring(timeoutMs ?? 3000);
+    return { inputMonitoringGranted: granted };
+  });
 
   ipcMain.handle('computer-use:check-fullscreen-apps', async () => {
     const allFullScreen = await detectFullScreenApps();
