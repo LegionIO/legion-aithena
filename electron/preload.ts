@@ -255,6 +255,7 @@ const legionAPI = {
   dialog: {
     openFile: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) =>
       ipcRenderer.invoke('dialog:open-file', options),
+    openDirectoryFiles: () => ipcRenderer.invoke('dialog:open-directory-files'),
   },
 
   // Image utilities (fetched via main process to bypass CORS)
