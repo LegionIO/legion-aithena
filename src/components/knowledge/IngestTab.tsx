@@ -98,6 +98,12 @@ export function IngestTab() {
     if (paths.length > 0) enqueuePaths(paths);
   }, [enqueuePaths]);
 
+  const handlePickDirectory = useCallback(async () => {
+    const result = await legion.dialog.openDirectoryFiles();
+    if (result.canceled || result.filePaths.length === 0) return;
+    enqueuePaths(result.filePaths);
+  }, [enqueuePaths]);
+
   return (
     <div className="space-y-6 p-6">
       {/* Drop zone */}
@@ -136,7 +142,7 @@ export function IngestTab() {
         </button>
         <button
           type="button"
-          onClick={handlePickFiles}
+          onClick={handlePickDirectory}
           className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/70"
         >
           <FolderOpenIcon className="h-4 w-4 text-muted-foreground" />

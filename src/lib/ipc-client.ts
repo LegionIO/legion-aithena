@@ -187,6 +187,7 @@ type LegionAPI = {
   }>;
   dialog: {
     openFile: (options?: { filters?: Array<{ name: string; extensions: string[] }> }) => Promise<unknown>;
+    openDirectoryFiles: () => Promise<{ canceled: boolean; filePaths: string[] }>;
   };
   image: {
     fetch: (url: string) => Promise<{ data?: string; mime?: string; error?: string }>;
