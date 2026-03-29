@@ -215,7 +215,7 @@ function normalizeDaemonEventName(eventName: string | undefined, payload: Record
 async function* streamDaemonLegion(options: StreamLegionOptions): AsyncGenerator<StreamEvent> {
   const daemonUrl = resolveDaemonUrl(options.config);
   const readyUrl = new URL('/api/ready', daemonUrl).toString();
-  const chatUrl = new URL('/api/llm/chat', daemonUrl).toString();
+  const inferenceUrl = new URL('/api/llm/inference', daemonUrl).toString();
   const authToken = resolveAuthToken(options.config, options.legionHome);
 
   let readyResponse: Response;
@@ -243,8 +243,8 @@ async function* streamDaemonLegion(options: StreamLegionOptions): AsyncGenerator
     return;
   }
 
-  const daemonPayload = buildDaemonPayload(options.messages);
-  if (!daemonPayload.message) {
+  const normalizedMessages = normalizeMessages(options.messages);
+  if (normalizedMessages.length === 0 || !normalizedMessages.some((m) => m.role === 'user')) {
     yield {
       conversationId: options.conversationId,
       type: 'error',
@@ -255,8 +255,7 @@ async function* streamDaemonLegion(options: StreamLegionOptions): AsyncGenerator
   }
 
   const requestBody: Record<string, unknown> = {
-    message: daemonPayload.message,
-    ...(daemonPayload.context ? { context: daemonPayload.context } : {}),
+    messages: normalizedMessages,
     model: options.modelConfig.modelName,
     provider: toLegionProvider(options.modelConfig.provider),
   };
@@ -268,14 +267,14 @@ async function* streamDaemonLegion(options: StreamLegionOptions): AsyncGenerator
   if (useStreaming) {
     let streamResponse: Response;
     try {
-      streamResponse = await fetch(chatUrl, {
+      streamResponse = await fetch(inferenceUrl, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'accept': 'text/event-stream',
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ ...requestBody, stream: true }),
         signal: options.abortSignal,
       });
     } catch (error) {
@@ -294,11 +293,11 @@ async function* streamDaemonLegion(options: StreamLegionOptions): AsyncGenerator
       return;
     }
 
-    yield* handleDaemonSyncResponse(options.conversationId, streamResponse, chatUrl, authToken, options.abortSignal, daemonUrl);
+    yield* handleDaemonSyncResponse(options.conversationId, streamResponse, inferenceUrl, authToken, options.abortSignal, daemonUrl);
     return;
   }
 
-  const response = await fetch(chatUrl, {
+  const response = await fetch(inferenceUrl, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -309,7 +308,7 @@ async function* streamDaemonLegion(options: StreamLegionOptions): AsyncGenerator
     signal: options.abortSignal,
   });
 
-  yield* handleDaemonSyncResponse(options.conversationId, response, chatUrl, authToken, options.abortSignal, daemonUrl);
+  yield* handleDaemonSyncResponse(options.conversationId, response, inferenceUrl, authToken, options.abortSignal, daemonUrl);
 }
 
 async function* consumeDaemonSSE(
