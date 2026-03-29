@@ -246,8 +246,8 @@ export function registerDaemonApiHandlers(
 
   // ── Sub-agents (daemon mode) ──
   ipcMain.handle('daemon:sub-agent-create', async (_e, body: { message: string; model?: string; parent_conversation_id?: string }) =>
-    daemonPost(cfg(), legionHome, '/api/llm/chat', {
-      message: body.message,
+    daemonPost(cfg(), legionHome, '/api/llm/inference', {
+      messages: [{ role: 'user', content: body.message }],
       ...(body.model ? { model: body.model } : {}),
       sub_agent: true,
       parent_id: body.parent_conversation_id,
