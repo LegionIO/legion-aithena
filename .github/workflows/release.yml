@@ -56,6 +56,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.22.0
@@ -172,6 +177,11 @@ jobs:
         with:
           ref: ${{ needs.prepare-release.outputs.tag }}
 
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.22.0
@@ -184,6 +194,32 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build:mac
+
+      - name: Verify Swift helper binary
+        run: |
+          APP_PATH="$(find dist/mac-arm64 -maxdepth 1 -name '*.app' -type d | head -n 1)"
+          HELPER="$APP_PATH/Contents/Resources/bin/LocalMacosHelper"
+
+          if [ ! -x "$HELPER" ]; then
+            echo "ERROR: LocalMacosHelper binary not found or not executable at $HELPER" >&2
+            exit 1
+          fi
+
+          echo "Helper binary: $(ls -la "$HELPER")"
+          echo "Architectures: $(lipo -archs "$HELPER")"
+          echo "Code signature:"
+          codesign -dvv "$HELPER" 2>&1
+
+          # Verify the helper can run and report permissions (basic smoke test)
+          RESULT=$("$HELPER" permissions 2>&1)
+          echo "Permissions check output: $RESULT"
+
+          if ! echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); assert d.get('ok') is True"; then
+            echo "ERROR: LocalMacosHelper permissions check failed" >&2
+            exit 1
+          fi
+
+          echo "✓ LocalMacosHelper binary verified"
 
       - name: Verify code signature
         run: |
