@@ -30,6 +30,8 @@ FRAMEWORKS=(
 mkdir -p "$OUTPUT_DIR"
 
 echo "Compiling LocalMacosHelper.swift → build/bin/LocalMacosHelper"
+echo "  Swift: $(swiftc --version 2>&1 | head -1)"
+echo "  SDK:   $(xcrun --show-sdk-version 2>/dev/null || echo 'unknown')"
 
 # Temporary per-arch binaries
 ARM64_BIN="$OUTPUT_DIR/.LocalMacosHelper-arm64"
