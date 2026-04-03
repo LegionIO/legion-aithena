@@ -20,6 +20,39 @@ export const ComposerInput: FC<{ placeholder?: string; className?: string; autoF
   const [showPlaceholder, setShowPlaceholder] = useState(true);
 
   const shouldShowPlaceholder = (text: string): boolean => text.trim().length === 0;
+  const getNodePlainText = (root: Node | null): string => {
+    if (!root) return '';
+
+    let text = '';
+    const walk = (node: Node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent ?? '';
+        return;
+      }
+
+      if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) {
+        return;
+      }
+
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const tag = (node as HTMLElement).tagName;
+        if (tag === 'BR') {
+          text += '\n';
+          return;
+        }
+        if ((tag === 'DIV' || tag === 'P') && text.length > 0 && !text.endsWith('\n')) {
+          text += '\n';
+        }
+      }
+
+      for (const child of Array.from(node.childNodes)) {
+        walk(child);
+      }
+    };
+
+    walk(root);
+    return text;
+  };
 
   // --- Cursor save/restore ---
   const saveCursorOffset = (): number => {
@@ -28,16 +61,10 @@ export const ComposerInput: FC<{ placeholder?: string; className?: string; autoF
     const range = sel.getRangeAt(0);
     if (!editorRef.current.contains(range.startContainer)) return 0;
 
-    let offset = 0;
-    const walker = document.createTreeWalker(editorRef.current, NodeFilter.SHOW_TEXT);
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      if (node === range.startContainer) {
-        return offset + range.startOffset;
-      }
-      offset += node.textContent?.length ?? 0;
-    }
-    return offset;
+    const prefixRange = document.createRange();
+    prefixRange.selectNodeContents(editorRef.current);
+    prefixRange.setEnd(range.startContainer, range.startOffset);
+    return getNodePlainText(prefixRange.cloneContents()).length;
   };
 
   const restoreCursorOffset = (charOffset: number) => {
@@ -47,19 +74,51 @@ export const ComposerInput: FC<{ placeholder?: string; className?: string; autoF
     if (!sel) return;
 
     let remaining = charOffset;
-    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-    let node: Text | null;
-    while ((node = walker.nextNode() as Text | null)) {
-      const len = node.textContent?.length ?? 0;
-      if (remaining <= len) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+      acceptNode: (node) => {
+        if (node.nodeType === Node.TEXT_NODE) return NodeFilter.FILTER_ACCEPT;
+        if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === 'BR') {
+          return NodeFilter.FILTER_ACCEPT;
+        }
+        return NodeFilter.FILTER_SKIP;
+      },
+    });
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const len = node.textContent?.length ?? 0;
+        if (remaining <= len) {
+          const range = document.createRange();
+          range.setStart(node, remaining);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          return;
+        }
+        remaining -= len;
+        continue;
+      }
+
+      const parent = node.parentNode;
+      if (!parent) continue;
+      const index = Array.prototype.indexOf.call(parent.childNodes, node) as number;
+      if (remaining === 0) {
         const range = document.createRange();
-        range.setStart(node, remaining);
+        range.setStart(parent, index);
         range.collapse(true);
         sel.removeAllRanges();
         sel.addRange(range);
         return;
       }
-      remaining -= len;
+      remaining -= 1;
+      if (remaining === 0) {
+        const range = document.createRange();
+        range.setStart(parent, index + 1);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
     }
     // Fallback: end
     const range = document.createRange();
@@ -71,20 +130,7 @@ export const ComposerInput: FC<{ placeholder?: string; className?: string; autoF
 
   // --- Extract plain text ---
   const getPlainText = (): string => {
-    if (!editorRef.current) return '';
-    let text = '';
-    const walk = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        text += node.textContent ?? '';
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const tag = (node as HTMLElement).tagName;
-        if (tag === 'BR') { text += '\n'; return; }
-        if ((tag === 'DIV' || tag === 'P') && text.length > 0 && !text.endsWith('\n')) text += '\n';
-        for (const child of Array.from(node.childNodes)) walk(child);
-      }
-    };
-    for (const child of Array.from(editorRef.current.childNodes)) walk(child);
-    return text;
+    return getNodePlainText(editorRef.current);
   };
 
   // --- Render highlighted HTML ---
