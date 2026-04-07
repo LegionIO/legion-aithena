@@ -7,6 +7,7 @@ import {
   type ClipboardEvent,
   type FC,
   type KeyboardEvent,
+  type MouseEvent,
 } from 'react';
 import { EditableCodeBlock } from './CodeBlock';
 import {
@@ -288,10 +289,44 @@ type EditableRunProps = {
   onBackspaceBeforeCode?: () => void;
   onDeleteAfterCode?: () => void;
   isBlockGap?: boolean;
-  onMouseDownFocus?: () => void;
+  onMouseDownFocus?: (event: MouseEvent<HTMLSpanElement>, element: HTMLSpanElement) => void;
   onMoveIntoPreviousCode?: () => void;
   onMoveIntoNextCode?: () => void;
 };
+
+function clickTargetsTrailingTextSpace(event: MouseEvent<HTMLElement>, element: HTMLElement): boolean {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0);
+  if (rects.length === 0) return false;
+
+  const lastRect = rects[rects.length - 1];
+  if (!lastRect) return false;
+
+  const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight);
+  const verticalSlop = Number.isFinite(lineHeight) ? Math.max(4, lineHeight * 0.35) : 8;
+
+  return event.clientX >= lastRect.right
+    && event.clientY >= lastRect.top - verticalSlop
+    && event.clientY <= lastRect.bottom + verticalSlop;
+}
+
+function clickTargetsLastVisualLine(event: MouseEvent<HTMLElement>, element: HTMLElement): boolean {
+  const range = document.createRange();
+  range.selectNodeContents(element);
+
+  const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 || rect.height > 0);
+  if (rects.length === 0) return false;
+
+  const lastRect = rects[rects.length - 1];
+  if (!lastRect) return false;
+
+  const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight);
+  const verticalSlop = Number.isFinite(lineHeight) ? Math.max(4, lineHeight * 0.35) : 8;
+
+  return event.clientY >= lastRect.top - verticalSlop;
+}
 
 const EditableRun: FC<EditableRunProps> = ({
   segment,
@@ -439,16 +474,18 @@ const EditableRun: FC<EditableRunProps> = ({
     document.execCommand('insertText', false, text);
   }, [onPaste]);
 
+  const handleMouseDown = useCallback((event: MouseEvent<HTMLSpanElement>) => {
+    const el = editorRef.current;
+    if (!el || !onMouseDownFocus) return;
+    onMouseDownFocus(event, el);
+  }, [onMouseDownFocus]);
+
   return (
     <span
       ref={editorRef}
       contentEditable
       suppressContentEditableWarning
-      onMouseDown={(event) => {
-        if (!onMouseDownFocus) return;
-        event.preventDefault();
-        onMouseDownFocus();
-      }}
+      onMouseDown={handleMouseDown}
       onInput={handleInput}
       onKeyDown={handleKeyDown}
       onPaste={handlePaste}
@@ -482,6 +519,8 @@ export const RichChatInput: FC<RichChatInputProps> = ({
   const codeHandlesRef = useRef(new Map<string, CodeHandle>());
   const pendingFocusRawOffsetRef = useRef<number | null>(autoFocus ? value.length : null);
   const autoFocusedRef = useRef(false);
+  const lastEditableRun = useMemo(() => findLastEditableRun(editableSegments), [editableSegments]);
+  const lastEditableRunKey = lastEditableRun ? getRunKey(lastEditableRun) : null;
 
   const registerHandle = useCallback((key: string, handle: RunHandle | null) => {
     if (handle) {
@@ -589,8 +628,10 @@ export const RichChatInput: FC<RichChatInputProps> = ({
       className={cn('relative overflow-y-auto whitespace-pre-wrap break-words', className)}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return;
-        const lastRun = findLastEditableRun(editableSegments);
+        const lastRun = lastEditableRun;
         if (!lastRun) return;
+        if (!clickTargetsLastVisualLine(event, event.currentTarget)) return;
+        event.preventDefault();
         focusAtRawOffset(lastRun.end);
       }}
     >
@@ -627,9 +668,19 @@ export const RichChatInput: FC<RichChatInputProps> = ({
           );
         }
 
+        const runKey = getRunKey(segment);
+        const shouldHandleMouseDownFocus =
+          segment.type === 'text'
+          && 'id' in segment
+          && segment.start === segment.end;
+        const shouldHandleTrailingClick =
+          runKey === lastEditableRunKey
+          && segment.type === 'text'
+          && segment.text.length > 0;
+
         return (
           <EditableRun
-            key={segment.type === 'text' && 'id' in segment ? segment.id : `${segment.type}-${segment.start}`}
+            key={runKey}
             segment={segment}
             registerHandle={registerHandle}
             onChangeText={(nextText, localOffset) => handleRunChange(segment, nextText, localOffset)}
@@ -645,10 +696,21 @@ export const RichChatInput: FC<RichChatInputProps> = ({
               && segment.start === segment.end
               && (editableSegments[index - 1]?.type === 'fencedCode' || editableSegments[index + 1]?.type === 'fencedCode')
             }
-            onMouseDownFocus={segment.type === 'text' ? () => {
-              pendingFocusRawOffsetRef.current = segment.start;
-              void focusAtRawOffset(segment.start);
-            } : undefined}
+            onMouseDownFocus={shouldHandleMouseDownFocus || shouldHandleTrailingClick
+              ? (event, element) => {
+                  if (shouldHandleMouseDownFocus) {
+                    event.preventDefault();
+                    pendingFocusRawOffsetRef.current = segment.start;
+                    void focusAtRawOffset(segment.start);
+                    return;
+                  }
+
+                  if (!clickTargetsTrailingTextSpace(event, element)) return;
+                  event.preventDefault();
+                  pendingFocusRawOffsetRef.current = segment.end;
+                  void focusAtRawOffset(segment.end);
+                }
+              : undefined}
             onMoveIntoPreviousCode={segment.type === 'text' ? () => {
               const previous = findPreviousCodeSegment(editableSegments, segment.start);
               if (previous?.type === 'fencedCode') {
