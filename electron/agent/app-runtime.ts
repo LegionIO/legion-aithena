@@ -275,6 +275,10 @@ async function* streamDaemonApp(options: StreamAppOptions): AsyncGenerator<Strea
     ...(daemonProviderOverride ? { provider: daemonProviderOverride } : {}),
     ...(options.tools?.length ? { tools: options.tools } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
+<<<<<<< HEAD
+    ...(options.conversationId ? { conversation_id: options.conversationId } : {}),
+=======
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
   };
   if (options.reasoningEffort) {
     requestBody.reasoning_effort = options.reasoningEffort;
@@ -383,7 +387,12 @@ async function* consumeDaemonSSE(
           toolCallId: (payload.toolCallId as string) ?? (payload.tool_call_id as string),
           toolName: (payload.toolName as string) ?? (payload.tool_name as string),
           args: payload.args ?? payload.parameters ?? {},
+<<<<<<< HEAD
+          // Prefer explicit startedAt (millisecond precision) over generic timestamp
+          startedAt: toIsoTimestamp(payload.startedAt ?? payload.started_at ?? payload.timestamp) ?? new Date().toISOString(),
+=======
           startedAt: toIsoTimestamp(payload.timestamp) ?? new Date().toISOString(),
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
         }];
       }
 
@@ -391,10 +400,22 @@ async function* consumeDaemonSSE(
         return [{
           conversationId,
           type: 'tool-result',
+<<<<<<< HEAD
+          toolCallId:  (payload.toolCallId as string) ?? (payload.tool_call_id as string),
+          toolName:    (payload.toolName as string) ?? (payload.tool_name as string),
+          result:      payload.result ?? payload.content,
+          // Use explicit startedAt so the frontend can compute accurate wall-clock duration
+          startedAt:   toIsoTimestamp(payload.startedAt ?? payload.started_at) ?? undefined,
+          finishedAt:  toIsoTimestamp(payload.finishedAt ?? payload.finished_at ?? payload.timestamp) ?? new Date().toISOString(),
+          durationMs:  typeof payload.durationMs === 'number' ? payload.durationMs
+                     : typeof payload.duration_ms === 'number' ? payload.duration_ms
+                     : undefined,
+=======
           toolCallId: (payload.toolCallId as string) ?? (payload.tool_call_id as string),
           toolName: (payload.toolName as string) ?? (payload.tool_name as string),
           result: payload.result ?? payload.content,
           finishedAt: toIsoTimestamp(payload.timestamp) ?? new Date().toISOString(),
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
         }];
       }
 
@@ -402,10 +423,18 @@ async function* consumeDaemonSSE(
         return [{
           conversationId,
           type: 'tool-result',
+<<<<<<< HEAD
+          toolCallId:  (payload.toolCallId as string) ?? (payload.tool_call_id as string),
+          toolName:    (payload.toolName as string) ?? (payload.tool_name as string),
+          result:      { isError: true, error: payload.error ?? payload.message ?? 'Tool execution failed' },
+          startedAt:   toIsoTimestamp(payload.startedAt ?? payload.started_at) ?? undefined,
+          finishedAt:  toIsoTimestamp(payload.finishedAt ?? payload.finished_at ?? payload.timestamp) ?? new Date().toISOString(),
+=======
           toolCallId: (payload.toolCallId as string) ?? (payload.tool_call_id as string),
           toolName: (payload.toolName as string) ?? (payload.tool_name as string),
           result: { isError: true, error: payload.error ?? payload.message ?? 'Tool execution failed' },
           finishedAt: toIsoTimestamp(payload.timestamp) ?? new Date().toISOString(),
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
         }];
       }
 
@@ -459,6 +488,28 @@ async function* consumeDaemonSSE(
         if (enrichments && typeof enrichments === 'object' && !Array.isArray(enrichments)) {
           events.push({ conversationId, type: 'enrichment', data: enrichments });
         }
+<<<<<<< HEAD
+        // Extract token usage from the done payload and emit as a context-usage event
+        // so RuntimeProvider can apply it to the message via applyTokenUsage.
+        const inputTokens = (payload.input_tokens ?? payload.inputTokens) as number | undefined;
+        const outputTokens = (payload.output_tokens ?? payload.outputTokens) as number | undefined;
+        const cacheReadTokens = (payload.cache_read_tokens ?? payload.cacheReadTokens) as number | undefined;
+        const cacheWriteTokens = (payload.cache_write_tokens ?? payload.cacheWriteTokens) as number | undefined;
+        if (inputTokens !== undefined || outputTokens !== undefined) {
+          events.push({
+            conversationId,
+            type: 'context-usage',
+            data: {
+              inputTokens:       inputTokens       ?? 0,
+              outputTokens:      outputTokens      ?? 0,
+              cacheReadTokens:   cacheReadTokens   ?? 0,
+              cacheWriteTokens:  cacheWriteTokens  ?? 0,
+              totalTokens:       (inputTokens ?? 0) + (outputTokens ?? 0),
+            },
+          });
+        }
+=======
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
         events.push({ conversationId, type: 'done', data: payload });
         return events;
       }
@@ -467,6 +518,13 @@ async function* consumeDaemonSSE(
         return [{ conversationId, type: 'context-usage', data: payload }];
       }
 
+<<<<<<< HEAD
+      if (eventName === 'model-fallback' || eventName === 'model_fallback') {
+        return [{ conversationId, type: 'model-fallback', data: payload }];
+      }
+
+=======
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
       if (
         eventName === 'conversation_compaction'
         || eventName === 'compaction_start'

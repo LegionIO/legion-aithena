@@ -58,6 +58,11 @@ type ContentPart =
     isError?: boolean;
     startedAt?: string;
     finishedAt?: string;
+<<<<<<< HEAD
+    /** Server-computed wall-clock duration in milliseconds — more accurate than finishedAt-startedAt for fast tools */
+    durationMs?: number;
+=======
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
     /** Original (pre-compaction) result content — present only when tool output was compacted */
     originalResult?: unknown;
     /** Tool compaction metadata — present only when tool output was compacted */
@@ -642,6 +647,10 @@ function applyToolResult(
     result: unknown;
     startedAt?: string;
     finishedAt?: string;
+<<<<<<< HEAD
+    durationMs?: number;
+=======
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
     compaction?: {
       originalContent: string;
       wasCompacted: boolean;
@@ -703,6 +712,10 @@ function applyToolResult(
       result: e.result,
       startedAt: e.startedAt ?? existing.startedAt ?? finishedAt,
       finishedAt,
+<<<<<<< HEAD
+      ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),
+=======
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
       ...(!e.compaction?.wasCompacted && existing.compactionPhase === 'start'
         ? { compactionPhase: existing.compactionMeta?.wasCompacted ? 'complete' as const : null }
         : {}),
@@ -1465,6 +1478,10 @@ export function RuntimeProvider({
           result: e.result,
           startedAt: e.startedAt,
           finishedAt: e.finishedAt,
+<<<<<<< HEAD
+          durationMs: e.durationMs,
+=======
+>>>>>>> e79782afb3c120df4a8ce91c4a316b9fd8d210e6
           compaction: e.compaction,
         });
       } else if (e.type === 'tool-progress') {
@@ -1574,6 +1591,12 @@ export function RuntimeProvider({
           setIsRunning(false);
           setTree([...acc.messages]);
           setHeadId(acc.headId);
+          // Update the model selector to reflect the actual model used (may differ
+          // from requested if a fallback occurred during the pipeline run).
+          const resolvedModel = (e.data as Record<string, unknown> | undefined)?.model as string | undefined;
+          if (resolvedModel) {
+            onModelFallbackRef.current?.(resolvedModel);
+          }
         }
         return;
       }
