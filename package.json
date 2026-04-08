@@ -43,6 +43,7 @@
     "@ai-sdk/anthropic": "^3.0.58",
     "@ai-sdk/azure": "^3.0.47",
     "@ai-sdk/openai": "^3.0.41",
+    "@ai-sdk/provider-utils": "^4.0.20",
     "@assistant-ui/react": "^0.12.3",
     "@assistant-ui/react-markdown": "^0.12.1",
     "@aws-sdk/credential-provider-node": "^3.972.5",

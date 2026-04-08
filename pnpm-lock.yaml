@@ -26,6 +26,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.41
         version: 3.0.41(zod@3.25.76)
+      '@ai-sdk/provider-utils':
+        specifier: ^4.0.20
+        version: 4.0.20(zod@3.25.76)
       '@assistant-ui/react':
         specifier: ^0.12.3
         version: 0.12.11(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(use-sync-external-store@1.6.0(react@19.2.3))
