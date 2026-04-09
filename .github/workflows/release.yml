@@ -151,6 +151,10 @@ jobs:
         env:
           LEGION_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
+          if [ -f branding/generate_icon.swift ]; then
+            swift branding/generate_icon.swift
+          fi
+
           cp branding/branding.config.ts upstream/branding.config.ts
 
           if find branding/build -type f | grep -q .; then
