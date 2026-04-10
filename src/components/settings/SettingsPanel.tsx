@@ -1,14 +1,9 @@
 import { useState, useEffect, useRef, useCallback, type FC } from 'react';
-import { XIcon, ChevronRightIcon, ChevronDownIcon, ServerIcon } from 'lucide-react';
+import { XIcon, ChevronRightIcon } from 'lucide-react';
 import { useConfig } from '@/providers/ConfigProvider';
 import { EditableTextarea } from '@/components/EditableTextarea';
 import { EditableInput } from '@/components/EditableInput';
-import { ModelSettings } from './ModelSettings';
-import { ProfileSettings } from './ProfileSettings';
-import { CompactionSettings } from './CompactionSettings';
-import { MemorySettings } from './MemorySettings';
 import { ToolSettings } from './ToolSettings';
-import { AdvancedSettings } from './AdvancedSettings';
 import { McpSettings } from './McpSettings';
 import { SkillSettings } from './SkillSettings';
 import { AudioSettings } from './AudioSettings';
@@ -43,68 +38,55 @@ import { getPluginComponent } from '@/components/plugins/PluginComponentRegistry
 import { usePlugins } from '@/providers/PluginProvider';
 
 type SettingsSection =
-  | 'appearance' | 'models' | 'profiles' | 'memory' | 'compaction' | 'tools' | 'skills' | 'sub-agents' | 'system-prompt'
-  | 'audio' | 'realtime' | 'media-generation' | 'computer-use' | 'advanced' | 'mcp'
-  | 'daemon' | 'extensions' | 'tasks' | 'workers' | 'events' | 'audit'
-  | 'prompts' | 'webhooks' | 'tenants' | 'capacity' | 'governance' | 'metrics' | 'doctor' | 'topology'
-  | 'gaia' | 'task-graph' | 'memory-inspector' | 'cost-tracker' | 'mesh' | 'schedule-builder' | 'triggers';
+  | 'appearance'
+  | 'daemon' | 'extensions' | 'gaia' | 'tasks' | 'workers' | 'events'
+  | 'prompts' | 'triggers' | 'webhooks' | 'tenants' | 'capacity' | 'governance'
+  | 'metrics' | 'doctor' | 'topology' | 'memory-inspector' | 'task-graph'
+  | 'cost-tracker' | 'mesh' | 'schedule-builder' | 'audit'
+  | 'skills' | 'system-prompt' | 'tools' | 'mcp'
+  | 'audio' | 'realtime' | 'media-generation' | 'computer-use';
 
-const sections: Array<{ key: SettingsSection; label: string; group?: string }> = [
+const sections: Array<{ key: SettingsSection; label: string }> = [
   { key: 'appearance', label: 'Appearance' },
-  { key: 'models', label: 'Models' },
-  { key: 'profiles', label: 'Profiles' },
-  { key: 'memory', label: 'Memory' },
-  { key: 'compaction', label: 'Compaction' },
-  { key: 'tools', label: 'Tools' },
+  { key: 'daemon', label: 'Daemon Config' },
+  { key: 'extensions', label: 'Extensions' },
+  { key: 'gaia', label: 'GAIA' },
+  { key: 'tasks', label: 'Tasks' },
+  { key: 'task-graph', label: 'Task Graph' },
+  { key: 'workers', label: 'Workers' },
+  { key: 'events', label: 'Events' },
+  { key: 'prompts', label: 'Prompts' },
+  { key: 'triggers', label: 'Triggers' },
+  { key: 'webhooks', label: 'Webhooks' },
+  { key: 'tenants', label: 'Tenants' },
+  { key: 'capacity', label: 'Capacity' },
+  { key: 'governance', label: 'Governance' },
+  { key: 'metrics', label: 'Metrics' },
+  { key: 'doctor', label: 'Diagnostics' },
+  { key: 'topology', label: 'Topology' },
+  { key: 'memory-inspector', label: 'Knowledge' },
+  { key: 'cost-tracker', label: 'Costs' },
+  { key: 'mesh', label: 'Mesh' },
+  { key: 'schedule-builder', label: 'Schedule Builder' },
+  { key: 'audit', label: 'Audit' },
   { key: 'skills', label: 'Skills' },
-  { key: 'sub-agents', label: 'Sub-Agents' },
   { key: 'system-prompt', label: 'System Prompt' },
+  { key: 'tools', label: 'Tools' },
   { key: 'mcp', label: 'MCP Servers' },
   { key: 'audio', label: 'Audio' },
   { key: 'realtime', label: 'Realtime Audio' },
   { key: 'media-generation', label: 'Media Generation' },
   { key: 'computer-use', label: 'Computer Use' },
-  { key: 'advanced', label: 'Advanced' },
-  { key: 'daemon', label: 'Config', group: 'Daemon' },
-  { key: 'extensions', label: 'Extensions', group: 'Daemon' },
-  { key: 'tasks', label: 'Tasks', group: 'Daemon' },
-  { key: 'workers', label: 'Workers', group: 'Daemon' },
-  { key: 'events', label: 'Events', group: 'Daemon' },
-  { key: 'audit', label: 'Audit', group: 'Daemon' },
-  { key: 'prompts', label: 'Prompts', group: 'Daemon' },
-  { key: 'webhooks', label: 'Webhooks', group: 'Daemon' },
-  { key: 'tenants', label: 'Tenants', group: 'Daemon' },
-  { key: 'capacity', label: 'Capacity', group: 'Daemon' },
-  { key: 'governance', label: 'Governance', group: 'Daemon' },
-  { key: 'metrics', label: 'Metrics', group: 'Daemon' },
-  { key: 'doctor', label: 'Diagnostics', group: 'Daemon' },
-  { key: 'topology', label: 'Topology', group: 'Daemon' },
-  { key: 'memory-inspector', label: 'Memory', group: 'Daemon' },
-  { key: 'task-graph', label: 'Task Graph', group: 'Daemon' },
-  { key: 'gaia', label: 'GAIA', group: 'Daemon' },
-  { key: 'cost-tracker', label: 'Costs', group: 'Daemon' },
-  { key: 'mesh', label: 'Mesh', group: 'Daemon' },
-  { key: 'schedule-builder', label: 'Schedule Builder', group: 'Daemon' },
-  { key: 'triggers', label: 'Triggers', group: 'Daemon' },
 ];
 
 export const SettingsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [activeSection, setActiveSection] = useState<string>('models');
-  const [daemonNavOpen, setDaemonNavOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<string>('appearance');
   const { config, updateConfig } = useConfig();
   const pluginSections = usePluginSettingsSections();
   const { setPluginConfig, sendAction } = usePlugins();
 
-  const builtInSections: Array<{ key: string; label: string; group?: string }> = sections;
-  const primarySections = builtInSections.filter((section) => !section.group);
-  const daemonSections = builtInSections.filter((section) => section.group === 'Daemon');
-  const isDaemonSectionActive = daemonSections.some((section) => section.key === activeSection);
   const sortedPluginSections = [...pluginSections].sort((a, b) => a.priority - b.priority);
   const hasPluginSections = sortedPluginSections.length > 0;
-
-  useEffect(() => {
-    if (isDaemonSectionActive) setDaemonNavOpen(true);
-  }, [isDaemonSectionActive]);
 
   if (!config) {
     return (
@@ -124,7 +106,7 @@ export const SettingsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
             <XIcon className="h-4 w-4" />
           </button>
         </div>
-        {primarySections.map((s) => (
+        {sections.map((s) => (
           <button
             key={s.key}
             type="button"
@@ -137,38 +119,6 @@ export const SettingsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
             <ChevronRightIcon className="ml-auto h-3 w-3 opacity-50" />
           </button>
         ))}
-
-        <div className="pt-2">
-          <button
-            type="button"
-            onClick={() => setDaemonNavOpen((open) => !open)}
-            className={`flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-xs font-medium transition-all ${
-              isDaemonSectionActive ? 'bg-primary text-primary-foreground shadow-[0_12px_28px_rgba(95,87,196,0.22)]' : 'hover:bg-muted/80 text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <ServerIcon className="h-3.5 w-3.5" />
-            Daemon
-            {daemonNavOpen ? <ChevronDownIcon className="ml-auto h-3 w-3 opacity-60" /> : <ChevronRightIcon className="ml-auto h-3 w-3 opacity-60" />}
-          </button>
-
-          {daemonNavOpen ? (
-            <div className="mt-1 space-y-1 border-l border-border/60 ml-4 pl-3">
-              {daemonSections.map((s) => (
-                <button
-                  key={s.key}
-                  type="button"
-                  onClick={() => setActiveSection(s.key)}
-                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-1.5 text-[11px] font-medium transition-all ${
-                    activeSection === s.key ? 'bg-primary/15 text-foreground' : 'hover:bg-muted/70 text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  {s.label}
-                  <ChevronRightIcon className="ml-auto h-3 w-3 opacity-40" />
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
         {hasPluginSections && (
           <>
             <div className="flex items-center gap-2 pt-3 pb-1 px-1">
@@ -196,20 +146,14 @@ export const SettingsPanel: FC<{ onClose: () => void }> = ({ onClose }) => {
       {/* Section content */}
       <div className="flex-1 overflow-y-auto p-5">
         {activeSection === 'appearance' && <AppearanceSettings config={config} updateConfig={updateConfig} />}
-        {activeSection === 'models' && <ModelSettings config={config} updateConfig={updateConfig} />}
-        {activeSection === 'profiles' && <ProfileSettings config={config} updateConfig={updateConfig} />}
-        {activeSection === 'memory' && <MemorySettings config={config} updateConfig={updateConfig} />}
-        {activeSection === 'compaction' && <CompactionSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'tools' && <ToolSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'skills' && <SkillSettings config={config} updateConfig={updateConfig} />}
-        {activeSection === 'sub-agents' && <SubAgentSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'system-prompt' && <SystemPromptSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'mcp' && <McpSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'audio' && <AudioSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'realtime' && <RealtimeSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'media-generation' && <MediaGenerationSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'computer-use' && <ComputerUseSettings config={config} updateConfig={updateConfig} />}
-        {activeSection === 'advanced' && <AdvancedSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'daemon' && <DaemonSettings config={config} updateConfig={updateConfig} />}
         {activeSection === 'extensions' && <DaemonExtensions config={config} updateConfig={updateConfig} />}
         {activeSection === 'tasks' && <DaemonTasks config={config} updateConfig={updateConfig} />}
@@ -294,74 +238,3 @@ const SystemPromptSettings: FC<SettingsProps> = ({ config, updateConfig }) => {
   );
 };
 
-const SubAgentSettings: FC<SettingsProps> = ({ config, updateConfig }) => {
-  const subAgents = (config as { tools?: { subAgents?: { enabled: boolean; maxDepth: number; maxConcurrent: number; maxPerParent: number; defaultModel?: string } } }).tools?.subAgents;
-
-  return (
-    <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Sub-Agents</h3>
-      <p className="text-xs text-muted-foreground">
-        Configure limits for sub-agent spawning. Sub-agents allow the AI to delegate tasks to child agents that work autonomously.
-      </p>
-
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={subAgents?.enabled ?? true}
-          onChange={(e) => updateConfig('tools.subAgents.enabled', e.target.checked)}
-          className="rounded"
-        />
-        <span className="text-xs">Enable sub-agents</span>
-      </label>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">Max Nesting Depth</label>
-          <EditableInput
-            className="w-full rounded-md border bg-card px-3 py-1.5 text-xs focus:ring-1 focus:ring-ring"
-            value={String(subAgents?.maxDepth ?? 3)}
-            onChange={(v) => {
-              const n = parseInt(v, 10);
-              if (!isNaN(n) && n >= 1 && n <= 10) updateConfig('tools.subAgents.maxDepth', n);
-            }}
-          />
-          <span className="text-[10px] text-muted-foreground">1–10</span>
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">Max Concurrent</label>
-          <EditableInput
-            className="w-full rounded-md border bg-card px-3 py-1.5 text-xs focus:ring-1 focus:ring-ring"
-            value={String(subAgents?.maxConcurrent ?? 5)}
-            onChange={(v) => {
-              const n = parseInt(v, 10);
-              if (!isNaN(n) && n >= 1 && n <= 20) updateConfig('tools.subAgents.maxConcurrent', n);
-            }}
-          />
-          <span className="text-[10px] text-muted-foreground">1–20</span>
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">Max Per Parent</label>
-          <EditableInput
-            className="w-full rounded-md border bg-card px-3 py-1.5 text-xs focus:ring-1 focus:ring-ring"
-            value={String(subAgents?.maxPerParent ?? 3)}
-            onChange={(v) => {
-              const n = parseInt(v, 10);
-              if (!isNaN(n) && n >= 1 && n <= 10) updateConfig('tools.subAgents.maxPerParent', n);
-            }}
-          />
-          <span className="text-[10px] text-muted-foreground">1–10</span>
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground block mb-1">Default Model Override</label>
-          <EditableInput
-            className="w-full rounded-md border bg-card px-3 py-1.5 text-xs focus:ring-1 focus:ring-ring"
-            placeholder="Inherit from parent"
-            value={subAgents?.defaultModel ?? ''}
-            onChange={(v) => updateConfig('tools.subAgents.defaultModel', v || undefined)}
-          />
-          <span className="text-[10px] text-muted-foreground">Leave blank to inherit</span>
-        </div>
-      </div>
-    </div>
-  );
-};

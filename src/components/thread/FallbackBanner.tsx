@@ -8,7 +8,7 @@ export const FallbackBanner: FC = () => {
   if (!banner) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-2.5 text-xs text-amber-200">
+    <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-2.5 text-xs text-amber-200">
       <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-400" />
       <span className="flex-1">
         Switched from <strong>{banner.fromModel}</strong> to <strong>{banner.toModel}</strong>
@@ -30,7 +30,7 @@ export const ComputerUseFallbackBanner: FC = () => {
   if (!fallbackBanner) return null;
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-2.5 text-xs text-amber-200">
+    <div className="mx-auto flex w-full max-w-[1600px] items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-2.5 text-xs text-amber-200">
       <AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-400" />
       <span className="flex-1">
         Switched from <strong>{fallbackBanner.fromModel}</strong> to <strong>{fallbackBanner.toModel}</strong>

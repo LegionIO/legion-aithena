@@ -2,8 +2,33 @@
 
 ## [1.1.0] - 2026-04-09
 
+### Removed
+- Standalone Mastra agent runtime — all inference now requires the Legion daemon
+- Direct LLM provider integrations (OpenAI, Anthropic, Bedrock, Azure language-model factory)
+- Client-side compaction, tokenization, and memory system (daemon handles its own context)
+- Tool observer (secondary LLM monitoring tool execution)
+- Title generation via direct LLM calls
+- Mastra instance and workflow engine
+- kai-desktop builder pattern and plugin files
+
+### Added
+- Daemon circuit breaker: when health check fails, all non-health requests short-circuit instantly for 10s, dramatically reducing idle CPU
+- HUNG tool state: tools that never receive a result are marked with an amber "HUNG" badge instead of ticking RUNNING forever
+- Persisted conversation repair: old conversations with stuck tools are fixed on load
+- Thread archive: archive/unarchive threads instead of deleting them, with sidebar toggle to view archived
+- Right-click context menu on threads: rename, archive, export, delete
+- Inline thread rename from context menu or sidebar
+- Export dialog accessible from context menu
+- Drag-and-drop files now include full filesystem path in the message
+- New conversations default working directory to user home (`~/`) instead of null
+- Tool path resolution defaults to home directory when no cwd is set
+
 ### Changed
-- Rip and shift
+- CI/CD workflow: auto-build and release on push to main, run checks on PRs, skip release if tag exists
+- Chat thread max-width widened from 1024px to 1600px to reduce wasted space on large screens
+- Message spacing tightened (12px gaps instead of 24-32px) for denser thread view
+- Settings panel: removed dead sections (Models, Profiles, Memory, Compaction, Advanced, Sub-Agents)
+- Settings panel: flattened daemon settings to top-level — no more nested collapsible group
 
 ## [1.0.18] - 2026-04-07
 

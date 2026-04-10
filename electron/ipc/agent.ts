@@ -1,6 +1,7 @@
 import type { IpcMain } from 'electron';
 import { BrowserWindow } from 'electron';
 import { join } from 'path';
+import { homedir } from 'os';
 import { resolveModelForThread, resolveModelCatalog, resolveStreamConfig, type ModelCatalogEntry, type LLMModelConfig } from '../agent/model-catalog.js';
 import type { StreamEvent, ReasoningEffort } from '../agent/mastra-agent.js';
 import { getAppStatus, resolveAgentBackend, streamAppAgent } from '../agent/app-runtime.js';
@@ -92,6 +93,9 @@ export function registerAgentHandlers(ipcMain: IpcMain, appHome: string): void {
       fallbackEnabled?: boolean,
       cwd?: string,
     ) => {
+    // Default working directory to user home if not set
+    const effectiveCwd = cwd || homedir();
+
     // Cancel any existing stream for this conversation
     const existing = activeStreams.get(conversationId);
     if (existing) existing.abort();
@@ -155,7 +159,7 @@ export function registerAgentHandlers(ipcMain: IpcMain, appHome: string): void {
           primaryModel: fallbackEntry,
           fallbackModels: [],
           fallbackEnabled: false,
-          systemPrompt: withWorkingDirectoryPrompt(config.systemPrompt, cwd),
+          systemPrompt: withWorkingDirectoryPrompt(config.systemPrompt, effectiveCwd),
           temperature: config.advanced.temperature,
           maxSteps: config.advanced.maxSteps,
           maxRetries: config.advanced.maxRetries,
@@ -224,7 +228,7 @@ export function registerAgentHandlers(ipcMain: IpcMain, appHome: string): void {
             abortSignal: controller.signal,
             reasoningEffort,
             tools: toolSchemas,
-            cwd,
+            cwd: effectiveCwd,
           });
 
           for await (const event of stream) {

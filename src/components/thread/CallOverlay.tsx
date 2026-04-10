@@ -188,7 +188,7 @@ export const CallOverlay: FC = () => {
 
   return (
     <div className="relative z-20 border-t border-border/70 bg-background/88 px-6 pb-6 pt-4 backdrop-blur-md">
-      <div className="mx-auto w-full max-w-5xl">
+      <div className="mx-auto w-full max-w-[1600px]">
         <div className="flex flex-col gap-3 rounded-[1.7rem] border border-border/70 bg-card/78 px-4 py-4 app-composer-shadow">
           {/* Row 1: Status, audio levels, timer */}
           <div className="flex items-center justify-between px-1">

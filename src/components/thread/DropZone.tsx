@@ -39,6 +39,8 @@ export const DropZone: FC<{ children: ReactNode }> = ({ children }) => {
 
     const pending: Promise<void>[] = [];
     for (const file of files) {
+      // In Electron, dropped files expose the full filesystem path
+      const filePath = (file as File & { path?: string }).path || undefined;
       pending.push(
         new Promise<void>((resolve) => {
           const reader = new FileReader();
@@ -56,6 +58,7 @@ export const DropZone: FC<{ children: ReactNode }> = ({ children }) => {
                   size: file.size,
                   dataUrl,
                   text: textReader.result as string,
+                  filePath,
                 }]);
                 resolve();
               };
@@ -67,6 +70,7 @@ export const DropZone: FC<{ children: ReactNode }> = ({ children }) => {
                 isImage: file.type.startsWith('image/'),
                 size: file.size,
                 dataUrl,
+                filePath,
               }]);
               resolve();
             }

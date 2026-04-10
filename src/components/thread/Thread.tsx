@@ -104,7 +104,7 @@ export const Thread: FC<{
           <ThreadPrimitive.Empty>
             <EmptyThreadBackground />
           </ThreadPrimitive.Empty>
-          <div className="relative z-10 mx-auto flex min-h-full w-full max-w-5xl flex-col px-6 pt-8">
+          <div className="relative z-10 mx-auto flex min-h-full w-full max-w-[1600px] flex-col px-6 pt-4">
             <ThreadWelcome />
             <ThreadPrimitive.Messages
               components={{
@@ -148,7 +148,7 @@ const ThreadModeTabs: FC<{ mode: ThreadMode; onChange: (mode: ThreadMode) => voi
 
   return (
     <div className="border-b border-border/70 bg-background/85 px-6 py-2 backdrop-blur-md">
-      <div className="mx-auto flex w-full max-w-5xl items-center gap-1.5">
+      <div className="mx-auto flex w-full max-w-[1600px] items-center gap-1.5">
         <button
           type="button"
           onClick={() => onChange('chat')}
@@ -215,7 +215,7 @@ const ComputerTabSurface: FC = () => {
     return (
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="px-6 py-4">
-          <div className="mx-auto flex w-full max-w-5xl min-h-0 flex-col">
+          <div className="mx-auto flex w-full max-w-[1600px] min-h-0 flex-col">
             <div className="flex min-h-full flex-1 items-center justify-center rounded-2xl border border-dashed border-border/60 bg-card/20 px-6 py-8">
               <div className="max-w-md text-center">
                 <MonitorIcon className="mx-auto h-8 w-8 text-muted-foreground/40" />
@@ -236,7 +236,7 @@ const ComputerTabSurface: FC = () => {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="px-6 py-4">
-        <div className="mx-auto flex w-full max-w-5xl min-h-0 flex-col">
+        <div className="mx-auto flex w-full max-w-[1600px] min-h-0 flex-col">
           <ComputerSessionPanel session={activeComputerSession} />
         </div>
       </div>
@@ -462,7 +462,7 @@ const UserMessage: FC = () => {
     ? ((config as Record<string, unknown>).audio as { tts?: { enabled?: boolean } })?.tts?.enabled ?? true
     : true;
   return (
-    <MessagePrimitive.Root className="group mb-6 flex justify-end">
+    <MessagePrimitive.Root className="group mb-3 flex justify-end">
       <div className="max-w-[72%]">
         <div
           className="rounded-[1.6rem] border px-5 py-3 text-foreground backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.22),var(--app-user-bubble-shadow)]"
@@ -750,7 +750,7 @@ const AssistantMessage: FC = () => {
     }];
     return (
       <MessagePrimitive.Root className="group mb-2 flex justify-start">
-        <div className="w-full max-w-4xl">
+        <div className="w-full max-w-[1600px]">
           <SidechainGroup agentId={agentId} messages={sidechainMessages} />
         </div>
       </MessagePrimitive.Root>
@@ -775,8 +775,8 @@ const AssistantMessage: FC = () => {
   const showResponseBadge = Boolean(badgeStartedAt);
 
   return (
-    <MessagePrimitive.Root className="group mb-8 flex justify-start">
-      <div className="w-full max-w-4xl">
+    <MessagePrimitive.Root className="group mb-3 flex justify-start">
+      <div className="w-full max-w-[1600px]">
         <div className={`aui-assistant-content relative rounded-[1.5rem] border border-border/45 bg-card/[0.22] px-4 py-3 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-[2px] ${showResponseBadge ? 'pr-20' : ''}`}>
           {showResponseBadge && (
             <div
@@ -1327,7 +1327,7 @@ const Composer: FC<{
 
   return (
     <div className="relative z-20 border-t border-border/70 bg-background/88 px-6 pb-6 pt-4 backdrop-blur-md">
-      <div className="mx-auto w-full max-w-5xl">
+      <div className="mx-auto w-full max-w-[1600px]">
         {mode === 'chat' && hasFileAttachments && (
           <div className="mb-3 flex flex-wrap gap-2">
             {attachments.map((file, i) => (

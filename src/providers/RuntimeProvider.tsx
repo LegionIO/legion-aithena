@@ -122,6 +122,7 @@ export type ConversationRecord = {
   isSubAgent?: boolean;
   // Backend mode — set once at conversation creation
   backendMode?: 'mastra' | 'legion-daemon';
+  archived?: boolean;
 };
 
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
@@ -1207,6 +1208,9 @@ export function RuntimeProvider({
           if (status?.backend === 'legion-daemon') detectedBackend = 'legion-daemon';
         } catch { /* default to mastra */ }
         backendModeRef.current = detectedBackend;
+        // Default working directory to user's home
+        let defaultCwd: string | null = null;
+        try { defaultCwd = await app.platform.homedir(); } catch { /* fallback to null */ }
         await app.conversations.put({
           id: newId, title: null, fallbackTitle: null, messages: [], messageTree: [], headId: null,
           conversationCompaction: null, lastContextUsage: null,
@@ -1215,15 +1219,15 @@ export function RuntimeProvider({
           messageCount: 0, userMessageCount: 0,
           runStatus: 'idle', hasUnread: false, lastAssistantUpdateAt: null,
           selectedModelKey: null,
-          currentWorkingDirectory: null,
+          currentWorkingDirectory: defaultCwd,
           backendMode: detectedBackend,
         } as ConversationRecord);
         await app.conversations.setActiveId(newId);
         setActiveConversationId(newId);
         setTree([]);
         setHeadId(null);
-        currentWorkingDirectoryRef.current = null;
-        setCurrentWorkingDirectoryState(null);
+        currentWorkingDirectoryRef.current = defaultCwd;
+        setCurrentWorkingDirectoryState(defaultCwd);
       } catch (err) {
         console.error('[Runtime] Failed to load conversation:', err);
       }
@@ -1709,15 +1713,16 @@ export function RuntimeProvider({
       else if (part.type === 'image') userContent.push({ type: 'image', image: (part as { image: string }).image });
     }
     for (const att of pendingAttachments) {
+      const pathLabel = att.filePath ? att.filePath : att.name;
       if (att.isImage) {
         userContent.push({ type: 'image', image: att.dataUrl });
-        userContent.push({ type: 'text', text: `\n[Attached image: ${att.name}]` });
+        userContent.push({ type: 'text', text: `\n[Attached image: ${pathLabel}]` });
       } else if (att.text) {
         userContent.push({ type: 'file', data: att.dataUrl, mimeType: att.mime, filename: att.name });
-        userContent.push({ type: 'text', text: `\n\n--- File: ${att.name} ---\n${att.text}\n--- End File ---\n` });
+        userContent.push({ type: 'text', text: `\n\n--- File: ${pathLabel} ---\n${att.text}\n--- End File ---\n` });
       } else {
         userContent.push({ type: 'file', data: att.dataUrl, mimeType: att.mime, filename: att.name });
-        userContent.push({ type: 'text', text: `\n[Attached file: ${att.name} (${att.mime}, ${(att.size / 1024).toFixed(1)} KB)]` });
+        userContent.push({ type: 'text', text: `\n[Attached file: ${pathLabel} (${att.mime}, ${(att.size / 1024).toFixed(1)} KB)]` });
       }
     }
     if (!userContent.some((p) => p.type === 'text')) return;

@@ -7,6 +7,8 @@ export type AttachedFile = {
   size: number;
   dataUrl: string;
   text?: string;
+  /** Full filesystem path (available in Electron drag-and-drop) */
+  filePath?: string;
 };
 
 type AttachmentContextValue = {
