@@ -1,85 +1,42 @@
+/**
+ * skills IPC handlers — delegates all skill operations to the Legion daemon.
+ *
+ * All skill execution, registration, and state management is now daemon-side.
+ * This file exposes read-only list/describe and cancel operations only.
+ */
 import type { IpcMain } from 'electron';
-import { readFileSync, existsSync, readdirSync, rmSync } from 'fs';
-import { join } from 'path';
-import type { AppConfig } from '../config/schema.js';
-import { loadSkillsFromDisk } from '../tools/skill-loader.js';
-import { readEffectiveConfig, writeDesktopConfig } from './config.js';
 
-function readConfig(appHome: string): AppConfig {
-  return readEffectiveConfig(appHome);
-}
+const DAEMON_URL = process.env.LEGION_DAEMON_URL ?? 'http://localhost:4567';
 
-export function registerSkillsHandlers(ipcMain: IpcMain, appHome: string): void {
+export function registerSkillsHandlers(ipcMain: IpcMain, _appHome: string): void {
   ipcMain.handle('skills:list', async () => {
-    const config = readConfig(appHome);
-    const skillsDir = config.skills?.directory || join(appHome, 'skills');
-    const skills = loadSkillsFromDisk(skillsDir);
-    const enabled = config.skills?.enabled ?? [];
-
-    return skills.map(({ manifest, dir }) => ({
-      name: manifest.name,
-      description: manifest.description,
-      version: manifest.version,
-      type: manifest.execution.type,
-      enabled: enabled.length === 0 || enabled.includes(manifest.name),
-      dir,
-    }));
+    const res = await fetch(`${DAEMON_URL}/api/skills`);
+    if (!res.ok) throw new Error(`skills:list failed: ${res.status}`);
+    return res.json();
   });
 
   ipcMain.handle('skills:get', async (_event, name: string) => {
-    const config = readConfig(appHome);
-    const skillsDir = config.skills?.directory || join(appHome, 'skills');
-    const skillDir = join(skillsDir, name);
-    const manifestPath = join(skillDir, 'skill.json');
-
-    if (!existsSync(manifestPath)) return { error: `Skill "${name}" not found.` };
-
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-    const files: Record<string, string> = {};
-
-    try {
-      const entries = readdirSync(skillDir);
-      for (const entry of entries) {
-        if (entry === 'skill.json') continue;
-        try {
-          files[entry] = readFileSync(join(skillDir, entry), 'utf-8');
-        } catch { /* skip binary files */ }
-      }
-    } catch { /* ignore */ }
-
-    return { manifest, files, dir: skillDir };
+    const [ns, nm] = name.includes(':') ? name.split(':', 2) : ['default', name];
+    const res = await fetch(`${DAEMON_URL}/api/skills/${encodeURIComponent(ns)}/${encodeURIComponent(nm)}`);
+    if (!res.ok) return { error: `Skill "${name}" not found.` };
+    return res.json();
   });
 
-  ipcMain.handle('skills:delete', async (_event, name: string) => {
-    const config = readConfig(appHome);
-    const skillsDir = config.skills?.directory || join(appHome, 'skills');
-    const skillDir = join(skillsDir, name);
-
-    if (!existsSync(skillDir)) return { error: `Skill "${name}" not found.` };
-
-    rmSync(skillDir, { recursive: true, force: true });
-
-    // Remove from enabled list
-    const enabled = (config.skills?.enabled ?? []).filter((s: string) => s !== name);
-    config.skills = { ...config.skills, enabled, directory: config.skills?.directory ?? join(appHome, 'skills') };
-    writeDesktopConfig(appHome, config);
-
-    return { success: true };
+  // skills:delete and skills:toggle are no longer supported; skills are managed daemon-side
+  ipcMain.handle('skills:delete', async (_event, _name: string) => {
+    return { error: 'Skill deletion must be performed via the Legion daemon.' };
   });
 
-  ipcMain.handle('skills:toggle', async (_event, name: string, enable: boolean) => {
-    const config = readConfig(appHome);
-    let enabled = [...(config.skills?.enabled ?? [])];
+  ipcMain.handle('skills:toggle', async (_event, _name: string, _enable: boolean) => {
+    return { error: 'Skill toggling must be performed via the Legion daemon.' };
+  });
 
-    if (enable && !enabled.includes(name)) {
-      enabled.push(name);
-    } else if (!enable) {
-      enabled = enabled.filter((s: string) => s !== name);
-    }
-
-    config.skills = { ...config.skills, enabled, directory: config.skills?.directory ?? join(appHome, 'skills') };
-    writeDesktopConfig(appHome, config);
-
-    return { success: true, enabled: enable };
+  ipcMain.handle('skills:cancel', async (_event, conversationId: string) => {
+    const res = await fetch(
+      `${DAEMON_URL}/api/skills/active/${encodeURIComponent(conversationId)}`,
+      { method: 'DELETE' }
+    );
+    if (!res.ok) throw new Error(`skills:cancel failed: ${res.status}`);
+    return res.json();
   });
 }
