@@ -432,7 +432,7 @@ if (gotSingleInstanceLock) {
     registerConversationHandlers(ipcMain, APP_HOME, getConfig);
     registerMcpHandlers(ipcMain);
     registerMemoryHandlers(ipcMain, APP_HOME, getConfig);
-    registerSkillsHandlers(ipcMain, APP_HOME);
+    registerSkillsHandlers(ipcMain, APP_HOME, getConfig);
     registerDaemonSettingsHandlers(ipcMain, APP_HOME, getConfig);
     registerDaemonApiHandlers(
       ipcMain,
