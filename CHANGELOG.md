@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.3] - 2026-04-17
+
+### Fixed
+- `stringifyValue` in `electron/agent/app-runtime.ts` now passes string values through directly instead of calling `JSON.stringify` on them, preventing double-encoding artifacts (`\"some text\"`) in LLM context
+- `formatResult` in `src/components/thread/ToolGroup.tsx` guards against the same double-encoding on the display path after `sanitizeResultForDisplay` unwrapping
+
 ## [1.1.2] - 2026-04-12
 
 ### Added

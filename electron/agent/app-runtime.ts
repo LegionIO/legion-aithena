@@ -193,6 +193,10 @@ function normalizeMessages(messages: unknown[]): RuntimeMessage[] {
 }
 
 function stringifyValue(value: unknown, maxLength = 2000): string {
+  // Tool results from the daemon arrive as already-decoded values — strings are
+  // strings, objects are objects. Passing a string through JSON.stringify would
+  // double-encode it, producing '"some text"' artifacts in the LLM context.
+  // Pass strings through directly; serialize everything else.
   try {
     const text = typeof value === 'string' ? value : JSON.stringify(value);
     if (typeof text !== 'string') return String(value);
