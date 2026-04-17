@@ -230,10 +230,12 @@ export const ConversationList: FC<ConversationListProps> = ({
   }, []);
 
   useEffect(() => {
-    void loadConversations();
+    let cancelled = false;
+    const safeLoad = () => { if (!cancelled) void loadConversations(); };
+    safeLoad();
     // Replace 1500ms polling with push events — main process broadcasts on every mutation
-    const unsub = app.conversations.onChanged(() => { void loadConversations(); });
-    return unsub;
+    const unsub = app.conversations.onChanged(() => { safeLoad(); });
+    return () => { cancelled = true; unsub(); };
   }, [loadConversations]);
 
   const isSearchActive = searchQuery.trim().length > 0;

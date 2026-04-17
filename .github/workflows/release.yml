@@ -82,7 +82,7 @@ jobs:
           fetch-depth: 0
       - name: Check version was bumped
         run: |
-          base_version=$(git show origin/${{ github.base_ref }}:package.json | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")
+          base_version=$(git show ${{ github.event.pull_request.base.sha }}:package.json | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])")
           pr_version=$(python3 -c "import json; print(json.load(open('package.json'))['version'])")
           echo "Base: $base_version  PR: $pr_version"
           if [ "$base_version" = "$pr_version" ]; then
@@ -103,7 +103,7 @@ jobs:
           fetch-depth: 0
       - name: Check CHANGELOG was updated
         run: |
-          if git diff origin/${{ github.base_ref }}...HEAD -- CHANGELOG.md | grep -q '^+'; then
+          if git diff ${{ github.event.pull_request.base.sha }}...HEAD -- CHANGELOG.md | grep -q '^+'; then
             echo "CHANGELOG.md updated — OK"
           else
             echo "ERROR: CHANGELOG.md was not updated. Add an entry for your changes." >&2

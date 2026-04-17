@@ -3,7 +3,7 @@
 ## [1.1.4] - 2026-04-17
 
 ### Performance
-- `ComposerBackdrop`: replaced continuous 60fps `requestAnimationFrame` polling loop with `input`/`scroll` event listeners — eliminates GPU wake-ups while the composer is idle (#24)
+- Removed unused `ComposerBackdrop` dead code; no shipped runtime behavior change for composer backdrop handling (#24)
 - `Thread`: matrix canvas animation now pauses on `visibilitychange`/window `blur` and resumes on focus; frame interval throttled from 65ms (~15fps) to 130ms (~8fps) (#25)
 - `ConversationList`: replaced 1500ms `setInterval` polling with `conversations:changed` IPC push subscription — eliminates 40+ IPC round-trips/min for users with large conversation history (#26)
 - `ConfigProvider`: context value wrapped in `useMemo`, `updateConfig` stabilized with `useCallback` — stops cascading re-renders across all settings consumers on every config update
