@@ -9,23 +9,43 @@ import { useState, useEffect, useRef, type FC } from 'react';
 export const ComposerBackdrop: FC = () => {
   const [text, setText] = useState('');
   const [scrollTop, setScrollTop] = useState(0);
-  const rafRef = useRef(0);
+  const detachRef = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
-    let active = true;
-    const sync = () => {
-      if (!active) return;
-      const textarea = document.querySelector('.app-composer-grid textarea') as HTMLTextAreaElement | null;
-      if (textarea) {
-        const val = textarea.value;
-        const st = textarea.scrollTop;
-        setText((prev) => prev === val ? prev : val);
-        setScrollTop((prev) => prev === st ? prev : st);
-      }
-      rafRef.current = requestAnimationFrame(sync);
+    const attach = (textarea: HTMLTextAreaElement) => {
+      const sync = () => {
+        setText(textarea.value);
+        setScrollTop(textarea.scrollTop);
+      };
+      sync();
+      textarea.addEventListener('input', sync);
+      textarea.addEventListener('scroll', sync);
+      return () => {
+        textarea.removeEventListener('input', sync);
+        textarea.removeEventListener('scroll', sync);
+      };
     };
-    rafRef.current = requestAnimationFrame(sync);
-    return () => { active = false; cancelAnimationFrame(rafRef.current); };
+
+    const textarea = document.querySelector('.app-composer-grid textarea') as HTMLTextAreaElement | null;
+    if (textarea) {
+      detachRef.current = attach(textarea);
+      return () => detachRef.current?.();
+    }
+
+    // Textarea not mounted yet — observe DOM until it appears
+    const observer = new MutationObserver(() => {
+      const el = document.querySelector('.app-composer-grid textarea') as HTMLTextAreaElement | null;
+      if (el) {
+        observer.disconnect();
+        detachRef.current = attach(el);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      detachRef.current?.();
+    };
   }, []);
 
   return (
