@@ -188,7 +188,6 @@ async function analyzeAsync(text: string, language: string): Promise<FormatInfo 
       const sanitized = sanitizeHtml(trimmed, {
         allowedTags: [],
         allowedAttributes: {},
-        disallowedTagsMode: 'discard',
       });
 
       const minified = sanitized
