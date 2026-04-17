@@ -226,8 +226,9 @@ export const ConversationList: FC<ConversationListProps> = ({
 
   useEffect(() => {
     loadConversations();
-    const interval = setInterval(loadConversations, 1500);
-    return () => clearInterval(interval);
+    // Replace 1500ms polling with push events — main process broadcasts on every mutation
+    const unsub = app.conversations.onChanged(() => { void loadConversations(); });
+    return unsub;
   }, []);
 
   const isSearchActive = searchQuery.trim().length > 0;
