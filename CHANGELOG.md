@@ -4,6 +4,9 @@
 
 ### Fixed
 - `MessageTimestamp` crashes with `date.toDateString is not a function` when `message.createdAt` is a string or number instead of a `Date` object (e.g. after conversation restore from JSON persistence)
+- `ProactiveMessage` timestamp rendering crashes on invalid date strings
+- Proactive message fallback in `Thread.tsx` calls `.toISOString()` on string `createdAt` values from deserialized messages
+- `ConversationList.formatRelativeTime` returns garbage on malformed timestamp strings
 
 ## [1.1.3] - 2026-04-17
 

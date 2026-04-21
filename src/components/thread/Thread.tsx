@@ -732,7 +732,7 @@ const AssistantMessage: FC = () => {
       <ProactiveMessage
         intent={proactiveMeta.intent ?? 'insight'}
         content={textContent}
-        timestamp={proactiveMeta.timestamp ?? message.createdAt?.toISOString() ?? new Date().toISOString()}
+        timestamp={proactiveMeta.timestamp ?? (message.createdAt instanceof Date ? message.createdAt.toISOString() : typeof message.createdAt === 'string' ? message.createdAt : new Date().toISOString())}
       />
     );
   }
