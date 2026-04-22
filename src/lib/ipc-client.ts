@@ -127,6 +127,7 @@ type AppAPI = {
     absorberResolve: (input: string) => Promise<DaemonResult>;
     absorberDispatch: (input: string, scope?: string) => Promise<DaemonResult>;
     absorberJob: (jobId: string) => Promise<DaemonResult>;
+    llmModels: () => Promise<DaemonResult>;
     health: () => Promise<DaemonResult>;
     ready: () => Promise<DaemonResult>;
     metrics: () => Promise<DaemonResult>;

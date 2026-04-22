@@ -428,6 +428,10 @@ export function registerDaemonApiHandlers(
   ipcMain.handle('daemon:llm-token-budget-reset', async () =>
     daemonPost(cfg(), appHome, '/api/llm/token_budget/reset', {}));
 
+  // ── LLM Models (OpenAI-compat /v1/models) ──
+  ipcMain.handle('daemon:llm-models', async () =>
+    daemonGet(cfg(), appHome, '/v1/models'));
+
   // ── Native Dispatch (legion-llm v0.6.0) ──
   ipcMain.handle('daemon:llm-providers', async () =>
     daemonGet(cfg(), appHome, '/api/llm/providers'));
