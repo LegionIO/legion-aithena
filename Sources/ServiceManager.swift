@@ -527,7 +527,11 @@ class ServiceManager: ObservableObject {
     private func updateServiceStatus(_ service: ServiceName, _ status: ServiceStatus, pid: Int? = nil) {
         if let idx = services.firstIndex(where: { $0.name == service }) {
             services[idx].status = status
-            if let pid { services[idx].pid = pid }
+            if let pid {
+                services[idx].pid = pid
+            } else if status == .stopped {
+                services[idx].pid = nil
+            }
         }
     }
 
@@ -540,7 +544,11 @@ class ServiceManager: ObservableObject {
                 return  // Don't overwrite transition states
             }
             services[idx].status = status
-            if let pid { services[idx].pid = pid }
+            if let pid {
+                services[idx].pid = pid
+            } else if status == .stopped {
+                services[idx].pid = nil
+            }
         }
     }
 
