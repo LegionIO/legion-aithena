@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Dark Terminal Theme
 
@@ -23,6 +24,54 @@ struct ChatMessage: Identifiable {
     let role: String // "user" or "assistant"
     let content: String
     let timestamp: Date
+}
+
+// MARK: - Pulsing Status Text
+
+private struct PulsingStatusText: View {
+    let status: ServiceStatus
+    @State private var pulse = false
+
+    private var isTransitioning: Bool {
+        status == .starting || status == .stopping
+    }
+
+    private var color: Color {
+        switch status {
+        case .running:  return TerminalTheme.green
+        case .stopped:  return TerminalTheme.red
+        case .starting: return TerminalTheme.yellow
+        case .stopping: return TerminalTheme.yellow
+        case .unknown:  return TerminalTheme.gray
+        }
+    }
+
+    var body: some View {
+        Text(status.rawValue.lowercased())
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundColor(color)
+            .opacity(isTransitioning && pulse ? 0.3 : 1.0)
+            .onAppear {
+                if isTransitioning {
+                    withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                }
+            }
+            .onChange(of: status) { newStatus in
+                let transitioning = newStatus == .starting || newStatus == .stopping
+                if transitioning {
+                    pulse = false
+                    withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                } else {
+                    withAnimation(.default) {
+                        pulse = false
+                    }
+                }
+            }
+    }
 }
 
 // MARK: - Status Window View
@@ -68,17 +117,69 @@ struct StatusWindowView: View {
         }
     }
 
+    // MARK: - Grid Icon (matches menu bar icon)
+
+    private static func gridIcon(size: CGFloat, color: NSColor) -> NSImage {
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            let s = rect.width
+            let padding: CGFloat = s * 0.1
+            let gridSize = s - padding * 2
+            let step = gridSize / 2
+
+            var points: [NSPoint] = []
+            for row in 0..<3 {
+                for col in 0..<3 {
+                    points.append(NSPoint(
+                        x: padding + CGFloat(col) * step,
+                        y: padding + CGFloat(row) * step
+                    ))
+                }
+            }
+
+            let connections: [(Int, Int)] = [
+                (0, 1), (1, 2), (3, 4), (4, 5), (6, 7), (7, 8),
+                (0, 3), (3, 6), (1, 4), (4, 7), (2, 5), (5, 8),
+                (1, 3), (1, 5), (3, 7), (5, 7),
+            ]
+
+            color.withAlphaComponent(0.45).setStroke()
+            for (a, b) in connections {
+                let path = NSBezierPath()
+                path.move(to: points[a])
+                path.line(to: points[b])
+                path.lineWidth = s * 0.045
+                path.stroke()
+            }
+
+            let nodeRadius = s * 0.095
+            for (i, p) in points.enumerated() {
+                let isCenter = (i == 4)
+                let r = isCenter ? nodeRadius * 1.4 : nodeRadius
+                color.setFill()
+                NSBezierPath(ovalIn: NSRect(
+                    x: p.x - r, y: p.y - r,
+                    width: r * 2, height: r * 2
+                )).fill()
+            }
+            return true
+        }
+        return image
+    }
+
     // MARK: - Title Bar
 
     private var titleBar: some View {
         HStack(spacing: 10) {
-            Image(systemName: "cpu")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(TerminalTheme.accent)
+            Image(nsImage: Self.gridIcon(
+                size: 18,
+                color: NSColor(TerminalTheme.accent)
+            ))
 
-            Text("Legion Interlink")
+            (Text("Legion")
+                .foregroundColor(TerminalTheme.accent)
+            + Text("IO")
+                .foregroundColor(TerminalTheme.text))
                 .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                .foregroundColor(TerminalTheme.text)
 
             statusPill
 
@@ -189,7 +290,7 @@ struct ServicesTab: View {
         .background(TerminalTheme.bg)
     }
 
-    // MARK: - Daemon Card (LegionIO with components + restart)
+    // MARK: - Daemon Card (LegionIO with components)
 
     private func daemonCard(_ service: ServiceState) -> some View {
         VStack(spacing: 0) {
@@ -203,12 +304,10 @@ struct ServicesTab: View {
                         .foregroundColor(TerminalTheme.text)
 
                     HStack(spacing: 8) {
-                        Text(service.status.rawValue.lowercased())
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(statusColor(service.status))
+                        statusText(service.status)
 
                         if let pid = service.pid {
-                            Text("pid:\(pid)")
+                            Text("pid:\(String(pid))")
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundColor(TerminalTheme.textDim)
                         }
@@ -217,15 +316,11 @@ struct ServicesTab: View {
 
                 Spacer()
 
-                // Control buttons: restart daemon + start/stop
+                // Control buttons: start/stop
                 HStack(spacing: 6) {
-                    if service.status == .running {
-                        terminalButton("restart daemon", color: TerminalTheme.yellow) {
-                            manager.restartDaemon()
-                        }
-                    }
-
-                    if service.status == .running || service.status == .starting {
+                    if service.status == .stopping || service.status == .starting {
+                        // No button while transitioning
+                    } else if service.status == .running {
                         terminalButton("stop", color: TerminalTheme.red) {
                             manager.stopService(service.name)
                         }
@@ -239,22 +334,13 @@ struct ServicesTab: View {
             .padding(12)
 
             // Daemon Components (inline)
-            if !manager.daemonReadiness.components.isEmpty {
+            if service.status == .running && !manager.daemonReadiness.components.isEmpty {
                 Rectangle()
                     .fill(TerminalTheme.border)
                     .frame(height: 1)
                     .padding(.horizontal, 12)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "circle.grid.3x3")
-                            .font(.system(size: 9))
-                            .foregroundColor(TerminalTheme.accent)
-                        Text("COMPONENTS")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundColor(TerminalTheme.textDim)
-                    }
-
                     LazyVGrid(columns: [
                         GridItem(.adaptive(minimum: 120), spacing: 4)
                     ], spacing: 4) {
@@ -300,12 +386,10 @@ struct ServicesTab: View {
                     .foregroundColor(TerminalTheme.text)
 
                 HStack(spacing: 8) {
-                    Text(service.status.rawValue.lowercased())
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(statusColor(service.status))
+                    statusText(service.status)
 
                     if let pid = service.pid {
-                        Text("pid:\(pid)")
+                        Text("pid:\(String(pid))")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(TerminalTheme.textDim)
                     }
@@ -315,7 +399,9 @@ struct ServicesTab: View {
             Spacer()
 
             // Control button
-            if service.status == .running || service.status == .starting {
+            if service.status == .stopping || service.status == .starting {
+                // No button while transitioning
+            } else if service.status == .running {
                 terminalButton("stop", color: TerminalTheme.red) {
                     manager.stopService(service.name)
                 }
@@ -352,8 +438,13 @@ struct ServicesTab: View {
         case .running:  return TerminalTheme.green
         case .stopped:  return TerminalTheme.red
         case .starting: return TerminalTheme.yellow
+        case .stopping: return TerminalTheme.yellow
         case .unknown:  return TerminalTheme.gray
         }
+    }
+
+    private func statusText(_ status: ServiceStatus) -> some View {
+        PulsingStatusText(status: status)
     }
 
     private func terminalButton(_ label: String, color: Color, action: @escaping () -> Void) -> some View {
@@ -361,6 +452,7 @@ struct ServicesTab: View {
             Text(label)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(color)
+                .frame(minWidth: 40)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
                 .background(color.opacity(0.1))
@@ -555,7 +647,7 @@ struct ChatTab: View {
     }
 
     private func callInferenceAPI(prompt: String) async -> String {
-        let url = URL(string: "http://localhost:4567/api/llm/inference")!
+        let url = URL(string: "http://localhost:\(ServiceManager.daemonPort)/api/llm/inference")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

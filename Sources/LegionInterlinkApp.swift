@@ -138,7 +138,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func openWebAPI() {
-        if let url = URL(string: "http://localhost:4567") {
+        if let url = URL(string: "http://localhost:\(ServiceManager.daemonPort)") {
             NSWorkspace.shared.open(url)
         }
     }
