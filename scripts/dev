@@ -61,11 +61,53 @@ cmd_run() {
   fi
 
   kill_existing
+
+  # Wrap in a temporary .app bundle so macOS registers the menu bar item.
+  # A bare executable won't get a proper NSApplication activation policy.
+  local app_dir=".build/dev/LegionInterlink.app/Contents/MacOS"
+  local plist=".build/dev/LegionInterlink.app/Contents/Info.plist"
+  mkdir -p "$app_dir"
+
+  # Copy binary into bundle
+  cp -f "$binary" "$app_dir/LegionInterlink"
+
+  # Copy resources bundle if it exists
+  local res_bundle
+  if [ "$config" = "release" ]; then
+    res_bundle=".build/release/LegionInterlink_LegionInterlink.bundle"
+  else
+    res_bundle=".build/debug/LegionInterlink_LegionInterlink.bundle"
+  fi
+  if [ -d "$res_bundle" ]; then
+    cp -Rf "$res_bundle" "$app_dir/"
+  fi
+
+  # Write a minimal Info.plist (LSUIElement hides from Dock by default)
+  cat > "$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>LegionInterlink</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.legion.interlink.dev</string>
+  <key>CFBundleName</key>
+  <string>Legion Interlink</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>
+PLIST
+
   log "Launching ${BOLD}LegionInterlink${RESET} (${config})..."
   echo -e "   ${CYAN}Menu bar icon should appear momentarily${RESET}"
   echo -e "   ${CYAN}Press Ctrl+C to stop${RESET}"
   echo ""
-  exec "$binary"
+  exec ".build/dev/LegionInterlink.app/Contents/MacOS/LegionInterlink"
 }
 
 cmd_clean() {
