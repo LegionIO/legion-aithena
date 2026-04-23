@@ -36,9 +36,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDele
     private var statusObservation: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Force accessory mode (menu bar only, no Dock icon)
-        NSApplication.shared.setActivationPolicy(.accessory)
-
         // Keep alive as menu bar app
         NSApplication.shared.disableRelaunchOnLogin()
         ProcessInfo.processInfo.disableSuddenTermination()
