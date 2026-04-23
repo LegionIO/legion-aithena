@@ -1,240 +1,724 @@
 import SwiftUI
 
+// MARK: - Dark Terminal Theme
+
+private enum TerminalTheme {
+    static let bg = Color(red: 0.08, green: 0.08, blue: 0.10)
+    static let surfaceBg = Color(red: 0.11, green: 0.11, blue: 0.14)
+    static let cardBg = Color(red: 0.14, green: 0.14, blue: 0.17)
+    static let border = Color.white.opacity(0.08)
+    static let text = Color(red: 0.88, green: 0.88, blue: 0.90)
+    static let textDim = Color(red: 0.55, green: 0.55, blue: 0.58)
+    static let accent = Color(red: 0.56, green: 0.50, blue: 0.92)
+    static let green = Color(red: 0.30, green: 0.85, blue: 0.45)
+    static let red = Color(red: 0.95, green: 0.35, blue: 0.35)
+    static let yellow = Color(red: 0.95, green: 0.80, blue: 0.25)
+    static let gray = Color(red: 0.45, green: 0.45, blue: 0.48)
+}
+
+// MARK: - Chat Message Model
+
+struct ChatMessage: Identifiable {
+    let id = UUID()
+    let role: String // "user" or "assistant"
+    let content: String
+    let timestamp: Date
+}
+
 // MARK: - Status Window View
 
 struct StatusWindowView: View {
     @EnvironmentObject var manager: ServiceManager
+    @State private var selectedTab = 0
+    @State private var hasAppeared = false
 
-    @State private var showingDaemonLog = true
+    private static let tabChat = 0
+    private static let tabLogs = 1
+    private static let tabServices = 2
 
     var body: some View {
         VStack(spacing: 0) {
-            headerSection
-            Divider()
-            servicesSection
-            Divider()
-            controlsSection
-                .padding()
-            Divider()
-            logSection
-        }
-        .frame(minWidth: 650, minHeight: 500)
-    }
+            // Title bar area
+            titleBar
 
-    // MARK: - Header
+            // Tab bar
+            tabBar
 
-    private var headerSection: some View {
-        HStack(spacing: 12) {
-            overallStatusDot
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Legion Interlink")
-                    .font(.headline)
-                Text(manager.overallStatus.displayText)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-            Spacer()
-            if let lastChecked = manager.lastChecked {
-                Text("Last check: \(lastChecked, style: .time)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding()
-        .background(Color(nsColor: .windowBackgroundColor))
-    }
-
-    private var overallStatusDot: some View {
-        Circle()
-            .fill(overallColor)
-            .frame(width: 14, height: 14)
-            .shadow(color: overallColor.opacity(0.5), radius: 4)
-    }
-
-    private var overallColor: Color {
-        switch manager.overallStatus {
-        case .allHealthy:  return .green
-        case .setupNeeded: return .orange
-        case .degraded:    return .yellow
-        case .allDown:     return .red
-        case .checking:    return .gray
-        }
-    }
-
-    // MARK: - Services
-
-    private var servicesSection: some View {
-        VStack(spacing: 0) {
-            ForEach(manager.services) { service in
-                serviceRow(service)
-                if service.name != ServiceName.allCases.last {
-                    Divider().padding(.horizontal)
+            // Tab content
+            Group {
+                switch selectedTab {
+                case Self.tabChat: ChatTab()
+                case Self.tabLogs: LogsTab()
+                case Self.tabServices: ServicesTab()
+                default: ChatTab()
                 }
             }
-
-            // Daemon components (if daemon is running)
-            if !manager.daemonReadiness.components.isEmpty {
-                Divider()
-                componentReadinessSection
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(TerminalTheme.bg)
+        .frame(minWidth: 700, minHeight: 520)
+        .preferredColorScheme(.dark)
+        .onAppear {
+            if !hasAppeared {
+                hasAppeared = true
+                if manager.overallStatus != .online {
+                    selectedTab = Self.tabServices
+                }
             }
         }
     }
 
-    private func serviceRow(_ service: ServiceState) -> some View {
+    // MARK: - Title Bar
+
+    private var titleBar: some View {
         HStack(spacing: 10) {
-            Circle()
-                .fill(statusColor(service.status))
-                .frame(width: 10, height: 10)
-                .shadow(color: statusColor(service.status).opacity(0.3), radius: 2)
+            Image(systemName: "cpu")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(TerminalTheme.accent)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(service.name.displayName)
-                    .font(.body)
-                if let pid = service.pid {
-                    Text("PID: \(pid)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-            }
+            Text("Legion Interlink")
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                .foregroundColor(TerminalTheme.text)
+
+            statusPill
 
             Spacer()
 
-            Text(service.status.rawValue)
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(statusColor(service.status).opacity(0.1))
-                .cornerRadius(4)
-
-            // Individual service controls
-            if service.status == .running || service.status == .starting {
-                Button(action: { manager.stopService(service.name) }) {
-                    Image(systemName: "stop.fill")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .help("Stop \(service.name.displayName)")
-            } else {
-                Button(action: { manager.startService(service.name) }) {
-                    Image(systemName: "play.fill")
-                        .font(.caption)
-                }
-                .buttonStyle(.borderless)
-                .help("Start \(service.name.displayName)")
+            if let lastChecked = manager.lastChecked {
+                Text(lastChecked, style: .time)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(TerminalTheme.textDim)
             }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(TerminalTheme.surfaceBg)
     }
 
-    private var componentReadinessSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Daemon Components")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .textCase(.uppercase)
-                .padding(.horizontal)
-                .padding(.top, 6)
+    private var statusPill: some View {
+        let color: Color = {
+            switch manager.overallStatus {
+            case .online: return TerminalTheme.green
+            case .offline: return TerminalTheme.red
+            case .setupNeeded: return TerminalTheme.yellow
+            case .checking: return TerminalTheme.gray
+            }
+        }()
 
-            LazyVGrid(columns: [
-                GridItem(.adaptive(minimum: 140), spacing: 8)
-            ], spacing: 4) {
-                ForEach(
-                    manager.daemonReadiness.components.sorted(by: { $0.key < $1.key }),
-                    id: \.key
-                ) { component, ready in
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(ready ? Color.green : Color.yellow)
-                            .frame(width: 6, height: 6)
-                        Text(component)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+        return HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+                .shadow(color: color.opacity(0.6), radius: 3)
+
+            Text(manager.overallStatus.displayText.uppercased())
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(color)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(color.opacity(0.3), lineWidth: 1)
+        )
+        .cornerRadius(4)
+    }
+
+    // MARK: - Tab Bar
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            tabButton(title: "Chat", icon: "bubble.left.and.bubble.right", index: 0)
+            tabButton(title: "Logs", icon: "terminal", index: 1)
+            tabButton(title: "Services", icon: "server.rack", index: 2)
+            Spacer()
+        }
+        .background(TerminalTheme.bg)
+        .overlay(
+            Rectangle()
+                .fill(TerminalTheme.border)
+                .frame(height: 1),
+            alignment: .bottom
+        )
+    }
+
+    private func tabButton(title: String, icon: String, index: Int) -> some View {
+        let isSelected = selectedTab == index
+        return Button(action: { selectedTab = index }) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                Text(title)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular, design: .monospaced))
+            }
+            .foregroundColor(isSelected ? TerminalTheme.accent : TerminalTheme.textDim)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(isSelected ? TerminalTheme.surfaceBg : Color.clear)
+            .overlay(
+                Rectangle()
+                    .fill(isSelected ? TerminalTheme.accent : Color.clear)
+                    .frame(height: 2),
+                alignment: .bottom
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Services Tab
+
+struct ServicesTab: View {
+    @EnvironmentObject var manager: ServiceManager
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                // Service Cards
+                ForEach(manager.services) { service in
+                    if service.name == .legionio {
+                        daemonCard(service)
+                    } else {
+                        serviceCard(service)
                     }
                 }
             }
-            .padding(.horizontal)
-            .padding(.bottom, 8)
+            .padding(16)
+        }
+        .background(TerminalTheme.bg)
+    }
+
+    // MARK: - Daemon Card (LegionIO with components + restart)
+
+    private func daemonCard(_ service: ServiceState) -> some View {
+        VStack(spacing: 0) {
+            // Main service row
+            HStack(spacing: 12) {
+                statusDot(service.status)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(service.name.displayName)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(TerminalTheme.text)
+
+                    HStack(spacing: 8) {
+                        Text(service.status.rawValue.lowercased())
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(statusColor(service.status))
+
+                        if let pid = service.pid {
+                            Text("pid:\(pid)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(TerminalTheme.textDim)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                // Control buttons: restart daemon + start/stop
+                HStack(spacing: 6) {
+                    if service.status == .running {
+                        terminalButton("restart daemon", color: TerminalTheme.yellow) {
+                            manager.restartDaemon()
+                        }
+                    }
+
+                    if service.status == .running || service.status == .starting {
+                        terminalButton("stop", color: TerminalTheme.red) {
+                            manager.stopService(service.name)
+                        }
+                    } else {
+                        terminalButton("start", color: TerminalTheme.green) {
+                            manager.startService(service.name)
+                        }
+                    }
+                }
+            }
+            .padding(12)
+
+            // Daemon Components (inline)
+            if !manager.daemonReadiness.components.isEmpty {
+                Rectangle()
+                    .fill(TerminalTheme.border)
+                    .frame(height: 1)
+                    .padding(.horizontal, 12)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "circle.grid.3x3")
+                            .font(.system(size: 9))
+                            .foregroundColor(TerminalTheme.accent)
+                        Text("COMPONENTS")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(TerminalTheme.textDim)
+                    }
+
+                    LazyVGrid(columns: [
+                        GridItem(.adaptive(minimum: 120), spacing: 4)
+                    ], spacing: 4) {
+                        ForEach(
+                            manager.daemonReadiness.components.sorted(by: { $0.key < $1.key }),
+                            id: \.key
+                        ) { component, ready in
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(ready ? TerminalTheme.green : TerminalTheme.yellow)
+                                    .frame(width: 5, height: 5)
+                                Text(component)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(TerminalTheme.textDim)
+                                Spacer()
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+        }
+        .background(TerminalTheme.cardBg)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(TerminalTheme.border, lineWidth: 1)
+        )
+        .cornerRadius(6)
+    }
+
+    // MARK: - Standard Service Card
+
+    private func serviceCard(_ service: ServiceState) -> some View {
+        HStack(spacing: 12) {
+            // Status indicator
+            statusDot(service.status)
+
+            // Service info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(service.name.displayName)
+                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .foregroundColor(TerminalTheme.text)
+
+                HStack(spacing: 8) {
+                    Text(service.status.rawValue.lowercased())
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(statusColor(service.status))
+
+                    if let pid = service.pid {
+                        Text("pid:\(pid)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(TerminalTheme.textDim)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Control button
+            if service.status == .running || service.status == .starting {
+                terminalButton("stop", color: TerminalTheme.red) {
+                    manager.stopService(service.name)
+                }
+            } else {
+                terminalButton("start", color: TerminalTheme.green) {
+                    manager.startService(service.name)
+                }
+            }
+        }
+        .padding(12)
+        .background(TerminalTheme.cardBg)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(TerminalTheme.border, lineWidth: 1)
+        )
+        .cornerRadius(6)
+    }
+
+    private func statusDot(_ status: ServiceStatus) -> some View {
+        let color = statusColor(status)
+        return ZStack {
+            Circle()
+                .fill(color.opacity(0.2))
+                .frame(width: 20, height: 20)
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+                .shadow(color: color.opacity(0.5), radius: 4)
         }
     }
 
     private func statusColor(_ status: ServiceStatus) -> Color {
         switch status {
-        case .running:  return .green
-        case .stopped:  return .red
-        case .starting: return .yellow
-        case .unknown:  return .gray
+        case .running:  return TerminalTheme.green
+        case .stopped:  return TerminalTheme.red
+        case .starting: return TerminalTheme.yellow
+        case .unknown:  return TerminalTheme.gray
         }
     }
 
-    // MARK: - Controls
+    private func terminalButton(_ label: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundColor(color)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(color.opacity(0.1))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(color.opacity(0.3), lineWidth: 1)
+                )
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
+    }
 
-    private var controlsSection: some View {
-        HStack(spacing: 12) {
-            Button(action: manager.startAll) {
-                Label("Start All", systemImage: "play.fill")
+}
+
+// MARK: - Chat Tab
+
+struct ChatTab: View {
+    @EnvironmentObject var manager: ServiceManager
+    @State private var messages: [ChatMessage] = []
+    @State private var inputText: String = ""
+    @State private var isStreaming = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Messages area
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 12) {
+                        if messages.isEmpty {
+                            emptyState
+                        }
+                        ForEach(messages) { message in
+                            chatBubble(message)
+                        }
+                        if isStreaming {
+                            streamingIndicator
+                        }
+                    }
+                    .padding(16)
+                    .id("chatBottom")
+                }
+                .onChange(of: messages.count) { _ in
+                    withAnimation {
+                        proxy.scrollTo("chatBottom", anchor: .bottom)
+                    }
+                }
             }
-            .disabled(manager.overallStatus == .allHealthy)
+            .background(TerminalTheme.bg)
 
-            Button(action: manager.stopAll) {
-                Label("Stop All", systemImage: "stop.fill")
-            }
-            .disabled(manager.overallStatus == .allDown)
+            // Input bar
+            inputBar
+        }
+    }
 
-            Button(action: manager.restartDaemon) {
-                Label("Restart Daemon", systemImage: "arrow.clockwise")
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Spacer().frame(height: 60)
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 32))
+                .foregroundColor(TerminalTheme.accent.opacity(0.4))
+            Text("Chat with Legion")
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundColor(TerminalTheme.textDim)
+            Text("Send a message to the LLM inference endpoint")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(TerminalTheme.textDim.opacity(0.6))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func chatBubble(_ message: ChatMessage) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            // Role indicator
+            Text(message.role == "user" ? ">" : "$")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundColor(message.role == "user" ? TerminalTheme.accent : TerminalTheme.green)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(message.role == "user" ? "you" : "legion")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(message.role == "user" ? TerminalTheme.accent : TerminalTheme.green)
+                    .textCase(.uppercase)
+
+                Text(message.content)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(TerminalTheme.text)
+                    .textSelection(.enabled)
             }
 
             Spacer()
+        }
+        .padding(10)
+        .background(
+            message.role == "user"
+                ? TerminalTheme.accent.opacity(0.05)
+                : TerminalTheme.green.opacity(0.03)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(
+                    message.role == "user"
+                        ? TerminalTheme.accent.opacity(0.15)
+                        : TerminalTheme.green.opacity(0.1),
+                    lineWidth: 1
+                )
+        )
+        .cornerRadius(6)
+    }
 
-            Button(action: {
-                if let url = URL(string: "http://localhost:4567") {
-                    NSWorkspace.shared.open(url)
+    private var streamingIndicator: some View {
+        HStack(spacing: 8) {
+            Text("$")
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundColor(TerminalTheme.green)
+                .frame(width: 16)
+
+            HStack(spacing: 4) {
+                ForEach(0..<3, id: \.self) { i in
+                    Circle()
+                        .fill(TerminalTheme.green)
+                        .frame(width: 4, height: 4)
+                        .opacity(0.6)
                 }
-            }) {
-                Label("Web API", systemImage: "globe")
             }
-            .buttonStyle(.borderless)
+
+            Spacer()
+        }
+        .padding(10)
+    }
+
+    private var inputBar: some View {
+        HStack(spacing: 10) {
+            Text(">")
+                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                .foregroundColor(TerminalTheme.accent)
+
+            TextField("Send a message...", text: $inputText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(TerminalTheme.text)
+                .onSubmit { sendMessage() }
+                .disabled(isStreaming)
+
+            if isStreaming {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.7)
+            } else {
+                Button(action: sendMessage) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(inputText.isEmpty ? TerminalTheme.textDim : TerminalTheme.accent)
+                }
+                .buttonStyle(.plain)
+                .disabled(inputText.isEmpty)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(TerminalTheme.surfaceBg)
+        .overlay(
+            Rectangle()
+                .fill(TerminalTheme.border)
+                .frame(height: 1),
+            alignment: .top
+        )
+    }
+
+    private func sendMessage() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        let userMessage = ChatMessage(role: "user", content: text, timestamp: Date())
+        messages.append(userMessage)
+        inputText = ""
+        isStreaming = true
+
+        Task {
+            let response = await callInferenceAPI(prompt: text)
+            await MainActor.run {
+                let assistantMessage = ChatMessage(
+                    role: "assistant",
+                    content: response,
+                    timestamp: Date()
+                )
+                messages.append(assistantMessage)
+                isStreaming = false
+            }
         }
     }
 
-    // MARK: - Logs
+    private func callInferenceAPI(prompt: String) async -> String {
+        let url = URL(string: "http://localhost:4567/api/llm/inference")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 120
 
-    private var logSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Daemon Log")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
+        // Build conversation history for context
+        var conversationMessages: [[String: String]] = []
+        for msg in messages {
+            conversationMessages.append([
+                "role": msg.role,
+                "content": msg.content
+            ])
+        }
+        // Add the current prompt
+        conversationMessages.append(["role": "user", "content": prompt])
+
+        let body: [String: Any] = [
+            "messages": conversationMessages,
+            "prompt": prompt
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    // Try common response shapes
+                    if let dataObj = json["data"] as? [String: Any] {
+                        if let content = dataObj["content"] as? String { return content }
+                        if let text = dataObj["text"] as? String { return text }
+                        if let response = dataObj["response"] as? String { return response }
+                        if let message = dataObj["message"] as? String { return message }
+                    }
+                    if let content = json["content"] as? String { return content }
+                    if let text = json["text"] as? String { return text }
+                    if let response = json["response"] as? String { return response }
+                    if let message = json["message"] as? String { return message }
+
+                    // Fallback: return raw JSON
+                    if let prettyData = try? JSONSerialization.data(withJSONObject: json, options: .prettyPrinted),
+                       let prettyString = String(data: prettyData, encoding: .utf8) {
+                        return prettyString
+                    }
+                }
+
+                // Fallback: return raw text
+                if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+                    return text
+                }
+            } else if let httpResponse = response as? HTTPURLResponse {
+                return "[error] HTTP \(httpResponse.statusCode)"
+            }
+        } catch let error as URLError where error.code == .cannotConnectToHost {
+            return "[error] daemon is not running — start the LegionIO daemon first"
+        } catch {
+            return "[error] \(error.localizedDescription)"
+        }
+
+        return "[error] unexpected response"
+    }
+}
+
+// MARK: - Logs Tab
+
+struct LogsTab: View {
+    @EnvironmentObject var manager: ServiceManager
+    @State private var autoScroll = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Toolbar
+            HStack(spacing: 12) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 11))
+                    .foregroundColor(TerminalTheme.accent)
+
+                Text("DAEMON LOG")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(TerminalTheme.textDim)
+
+                Text("— /opt/homebrew/var/log/legion/legion.log")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(TerminalTheme.textDim.opacity(0.5))
 
                 Spacer()
 
-                Button(action: manager.refreshLogs) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption)
+                Toggle(isOn: $autoScroll) {
+                    Text("auto-scroll")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(TerminalTheme.textDim)
                 }
-                .buttonStyle(.borderless)
-            }
-            .padding(.horizontal)
-            .padding(.top, 8)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
 
+                Button(action: { manager.logContents = "" }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "xmark.circle")
+                            .font(.system(size: 10))
+                        Text("clear")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    }
+                    .foregroundColor(TerminalTheme.textDim)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(TerminalTheme.textDim.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(TerminalTheme.textDim.opacity(0.2), lineWidth: 1)
+                    )
+                    .cornerRadius(3)
+                }
+                .buttonStyle(.plain)
+
+                Button(action: manager.refreshLogs) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10))
+                        Text("refresh")
+                            .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    }
+                    .foregroundColor(TerminalTheme.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(TerminalTheme.accent.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(TerminalTheme.accent.opacity(0.2), lineWidth: 1)
+                    )
+                    .cornerRadius(3)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(TerminalTheme.surfaceBg)
+            .overlay(
+                Rectangle()
+                    .fill(TerminalTheme.border)
+                    .frame(height: 1),
+                alignment: .bottom
+            )
+
+            // Log content
             ScrollViewReader { proxy in
-                ScrollView {
-                    Text(manager.logContents)
-                        .font(.system(.caption, design: .monospaced))
+                ScrollView([.horizontal, .vertical]) {
+                    Text(manager.logContents.isEmpty ? "waiting for log output..." : manager.logContents)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(
+                            manager.logContents.isEmpty
+                                ? TerminalTheme.textDim
+                                : TerminalTheme.green.opacity(0.85)
+                        )
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
-                        .padding(8)
-                        .id("logBottom")
+                        .padding(12)
+                        .id("logEnd")
                 }
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .padding(.horizontal)
-                .padding(.bottom)
+                .background(TerminalTheme.bg)
                 .onChange(of: manager.logContents) { _ in
-                    proxy.scrollTo("logBottom", anchor: .bottom)
+                    if autoScroll {
+                        proxy.scrollTo("logEnd", anchor: .bottom)
+                    }
                 }
             }
         }

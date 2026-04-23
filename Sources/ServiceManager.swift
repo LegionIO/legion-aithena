@@ -48,10 +48,9 @@ struct DaemonReadiness {
 // MARK: - Overall Status
 
 enum OverallStatus {
-    case allHealthy
+    case online
+    case offline
     case setupNeeded
-    case degraded
-    case allDown
     case checking
 }
 
@@ -72,22 +71,33 @@ class ServiceManager: ObservableObject {
     @Published var setupNeeded: Bool = false
 
     private let daemonHealthURL = URL(string: "http://localhost:4567/api/ready")!
-    private let daemonHealthCheckURL = URL(string: "http://localhost:4567/api/health")!
     private let logPath = "/opt/homebrew/var/log/legion/legion.log"
     private let agenticMarkerPath: String
     private var timer: Timer?
 
-    private var brewPath: String {
-        // Prefer Apple Silicon path, fall back to Intel
+    /// Resolved once at init — no repeated filesystem checks.
+    private let resolvedBrewPath: String
+    private let resolvedLegionioPath: String
+
+    private static func findBrewPath() -> String {
         if FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/brew") {
             return "/opt/homebrew/bin/brew"
         }
         return "/usr/local/bin/brew"
     }
 
+    private static func findLegionioPath() -> String {
+        if FileManager.default.isExecutableFile(atPath: "/opt/homebrew/bin/legionio") {
+            return "/opt/homebrew/bin/legionio"
+        }
+        return "/usr/local/bin/legionio"
+    }
+
     init() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         self.agenticMarkerPath = "\(home)/.legionio/.packs/agentic"
+        self.resolvedBrewPath = Self.findBrewPath()
+        self.resolvedLegionioPath = Self.findLegionioPath()
         checkSetupNeeded()
         startPolling()
     }
@@ -98,13 +108,12 @@ class ServiceManager: ObservableObject {
         setupNeeded = !FileManager.default.fileExists(atPath: agenticMarkerPath)
     }
 
-    // MARK: - Service Control
+    // MARK: - Service Control (all async, off main thread)
 
     func startAll() {
         for service in ServiceName.allCases {
             startService(service)
         }
-        delayedHealthCheck(after: 3)
     }
 
     func stopAll() {
@@ -113,49 +122,99 @@ class ServiceManager: ObservableObject {
         for service in ServiceName.allCases where service != .legionio {
             stopService(service)
         }
-        delayedHealthCheck(after: 2)
     }
 
     func startService(_ service: ServiceName) {
         updateServiceStatus(service, .starting)
-        runBrewServices(args: ["services", "start", service.brewName])
-        delayedHealthCheck(after: 2)
+        let brew = resolvedBrewPath
+        let legionio = resolvedLegionioPath
+        let name = service.brewName
+        Task.detached {
+            if service == .legionio {
+                // Ensure brew services isn't managing legionio (it gets stuck)
+                Self.runProcess(brew, arguments: ["services", "stop", "legionio"])
+                // Use legionio's own start command
+                Self.runProcess(legionio, arguments: ["start"])
+            } else {
+                Self.runProcess(brew, arguments: ["services", "start", name])
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            await self.checkAllServices()
+        }
     }
 
     func stopService(_ service: ServiceName) {
-        runBrewServices(args: ["services", "stop", service.brewName])
-        delayedHealthCheck(after: 1)
+        let brew = resolvedBrewPath
+        let legionio = resolvedLegionioPath
+        let name = service.brewName
+        Task.detached {
+            if service == .legionio {
+                // Stop via legionio CLI, and also ensure brew services releases it
+                Self.runProcess(legionio, arguments: ["stop"])
+                Self.runProcess(brew, arguments: ["services", "stop", "legionio"])
+            } else {
+                Self.runProcess(brew, arguments: ["services", "stop", name])
+            }
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            await self.checkAllServices()
+        }
     }
 
     func restartDaemon() {
         updateServiceStatus(.legionio, .starting)
-        runBrewServices(args: ["services", "restart", ServiceName.legionio.brewName])
-        delayedHealthCheck(after: 3)
+        let brew = resolvedBrewPath
+        let legionio = resolvedLegionioPath
+        Task.detached {
+            // Stop everything related to legionio
+            Self.runProcess(legionio, arguments: ["stop"])
+            Self.runProcess(brew, arguments: ["services", "stop", "legionio"])
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            // Start via legionio CLI
+            Self.runProcess(legionio, arguments: ["start"])
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            await self.checkAllServices()
+        }
     }
 
     // MARK: - Health Checks
 
     func checkAllServices() async {
-        // Check brew services for infrastructure
-        for service in ServiceName.allCases where service != .legionio {
-            let (running, pid) = await checkBrewService(service.brewName)
-            updateServiceStatus(service, running ? .running : .stopped, pid: pid)
-        }
+        let brew = resolvedBrewPath
 
-        // Check legionio daemon via HTTP
-        await checkDaemonHealth()
+        // Run all health checks concurrently off the main thread
+        async let redisResult = Self.checkBrewService(brew: brew, name: ServiceName.redis.brewName)
+        async let memcachedResult = Self.checkBrewService(brew: brew, name: ServiceName.memcached.brewName)
+        async let ollamaResult = Self.checkBrewService(brew: brew, name: ServiceName.ollama.brewName)
+        async let daemonResult = Self.checkDaemonHealth(url: daemonHealthURL)
+
+        let redis = await redisResult
+        let memcached = await memcachedResult
+        let ollama = await ollamaResult
+        let daemon = await daemonResult
+
+        // Update UI on main actor (we're already @MainActor)
+        updateServiceStatus(.redis, redis.running ? .running : .stopped, pid: redis.pid)
+        updateServiceStatus(.memcached, memcached.running ? .running : .stopped, pid: memcached.pid)
+        updateServiceStatus(.ollama, ollama.running ? .running : .stopped, pid: ollama.pid)
+
+        daemonReadiness = daemon.readiness
+        updateServiceStatus(.legionio, daemon.readiness.ready ? .running : .stopped)
 
         lastChecked = Date()
         recalculateOverallStatus()
     }
 
     func refreshLogs() {
-        logContents = tailFile(path: logPath, lines: 200)
+        let path = logPath
+        Task.detached {
+            let content = Self.tailFile(path: path, lines: 200)
+            await MainActor.run { self.logContents = content }
+        }
     }
 
     // MARK: - Process Execution (for onboarding)
 
-    func runCommand(_ executable: String, arguments: [String]) async -> (output: String, success: Bool) {
+    nonisolated func runCommand(_ executable: String, arguments: [String]) async -> (output: String, success: Bool) {
         await withCheckedContinuation { continuation in
             let process = Process()
             let pipe = Pipe()
@@ -179,7 +238,7 @@ class ServiceManager: ObservableObject {
     }
 
     /// Run a command and stream output line-by-line to a callback.
-    func runCommandStreaming(_ executable: String, arguments: [String], onLine: @escaping @Sendable (String) -> Void) async -> Bool {
+    nonisolated func runCommandStreaming(_ executable: String, arguments: [String], onLine: @escaping @Sendable (String) -> Void) async -> Bool {
         await withCheckedContinuation { continuation in
             let process = Process()
             let pipe = Pipe()
@@ -209,14 +268,37 @@ class ServiceManager: ObservableObject {
         }
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Static helpers (run off main thread)
 
-    private func checkBrewService(_ name: String) async -> (running: Bool, pid: Int?) {
-        let (output, success) = await runCommand(brewPath, arguments: ["services", "info", name, "--json"])
-        guard success else { return (false, nil) }
+    /// Run a brew command synchronously. Call from Task.detached only.
+    private nonisolated static func runProcess(_ executable: String, arguments: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+    }
 
-        guard let data = output.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+    /// Check a brew service status. Runs entirely off main thread.
+    private nonisolated static func checkBrewService(brew: String, name: String) async -> (running: Bool, pid: Int?) {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: brew)
+        process.arguments = ["services", "info", name, "--json"]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return (false, nil)
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
               let first = json.first else {
             return (false, nil)
         }
@@ -226,28 +308,48 @@ class ServiceManager: ObservableObject {
         return (running, pid)
     }
 
-    private func checkDaemonHealth() async {
+    /// Check daemon health via HTTP. Runs entirely off main thread.
+    private nonisolated static func checkDaemonHealth(url: URL) async -> (readiness: DaemonReadiness, running: Bool) {
         do {
-            let (data, response) = try await URLSession.shared.data(from: daemonHealthURL)
+            let (data, response) = try await URLSession.shared.data(from: url)
             if let httpResponse = response as? HTTPURLResponse,
                httpResponse.statusCode == 200,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                let ready = json["ready"] as? Bool ?? false
+                let payload = json["data"] as? [String: Any] ?? json
+                let ready = payload["ready"] as? Bool ?? false
                 var components: [String: Bool] = [:]
-                if let comps = json["components"] as? [String: Bool] {
+                if let comps = payload["components"] as? [String: Bool] {
                     components = comps
                 }
-                daemonReadiness = DaemonReadiness(ready: ready, components: components)
-                updateServiceStatus(.legionio, ready ? .running : .starting)
-            } else {
-                daemonReadiness = DaemonReadiness()
-                updateServiceStatus(.legionio, .stopped)
+                return (DaemonReadiness(ready: ready, components: components), ready)
             }
         } catch {
-            daemonReadiness = DaemonReadiness()
-            updateServiceStatus(.legionio, .stopped)
+            // Connection refused / timeout — daemon is down
+        }
+        return (DaemonReadiness(), false)
+    }
+
+    /// Read the tail of a log file. Runs off main thread.
+    private nonisolated static func tailFile(path: String, lines: Int) -> String {
+        // Use the tail command for efficiency — avoids reading entire file into memory
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tail")
+        process.arguments = ["-n", "\(lines)", path]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8) ?? "(unable to read log)"
+        } catch {
+            return "(no log file found at \(path))"
         }
     }
+
+    // MARK: - Private Helpers
 
     private func updateServiceStatus(_ service: ServiceName, _ status: ServiceStatus, pid: Int? = nil) {
         if let idx = services.firstIndex(where: { $0.name == service }) {
@@ -262,36 +364,14 @@ class ServiceManager: ObservableObject {
             return
         }
 
-        let statuses = services.map(\.status)
-        if statuses.allSatisfy({ $0 == .running }) {
-            overallStatus = .allHealthy
-        } else if statuses.allSatisfy({ $0 == .stopped }) {
-            overallStatus = .allDown
-        } else if statuses.contains(.unknown) {
+        let legionService = services.first(where: { $0.name == .legionio })
+        if legionService?.status == .running {
+            overallStatus = .online
+        } else if services.map(\.status).contains(.unknown) {
             overallStatus = .checking
         } else {
-            overallStatus = .degraded
+            overallStatus = .offline
         }
-    }
-
-    private func runBrewServices(args: [String]) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: brewPath)
-        process.arguments = args
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        try? process.run()
-        process.waitUntilExit()
-    }
-
-    private func tailFile(path: String, lines: Int) -> String {
-        guard let data = FileManager.default.contents(atPath: path),
-              let content = String(data: data, encoding: .utf8) else {
-            return "(no log file found at \(path))"
-        }
-        let allLines = content.components(separatedBy: "\n")
-        let tail = allLines.suffix(lines)
-        return tail.joined(separator: "\n")
     }
 
     private func startPolling() {
@@ -303,13 +383,6 @@ class ServiceManager: ObservableObject {
                 await self.checkAllServices()
                 self.refreshLogs()
             }
-        }
-    }
-
-    private func delayedHealthCheck(after seconds: Double) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            guard let self else { return }
-            Task { await self.checkAllServices() }
         }
     }
 

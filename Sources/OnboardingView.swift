@@ -277,13 +277,16 @@ struct OnboardingView: View {
         }
         setStepStatus("update", updateSuccess ? .succeeded : .failed)
 
-        // Step 6: Start daemon
+        // Step 6: Start daemon via legionio CLI (not brew services — that gets stuck)
         setStepStatus("daemon", .running)
         appendOutput("\nStarting LegionIO daemon...\n")
 
+        // Ensure brew services isn't managing legionio
+        let (_, _) = await manager.runCommand(brewPath, arguments: ["services", "stop", "legionio"])
+
         let (daemonOutput, daemonSuccess) = await manager.runCommand(
-            brewPath,
-            arguments: ["services", "start", "legionio"]
+            legionioPath,
+            arguments: ["start"]
         )
         appendOutput(daemonOutput)
         setStepStatus("daemon", daemonSuccess ? .succeeded : .failed)

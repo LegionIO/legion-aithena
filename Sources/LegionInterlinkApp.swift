@@ -8,216 +8,8 @@ struct LegionInterlinkApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuContent()
-                .environmentObject(manager)
-        } label: {
-            Image(nsImage: menuBarIcon(for: manager.overallStatus))
-        }
-        .menuBarExtraStyle(.menu)
-
         Settings {
             EmptyView()
-        }
-    }
-
-    // MARK: - Menu Bar Icon
-
-    /// Draws the Legion network grid icon (16x16) with a colored dot badge.
-    private func menuBarIcon(for status: OverallStatus) -> NSImage {
-        let size = NSSize(width: 18, height: 18)
-        let image = NSImage(size: size, flipped: false) { rect in
-            drawLegionIcon(in: rect)
-            drawStatusBadge(in: rect, status: status)
-            return true
-        }
-        image.isTemplate = false
-        return image
-    }
-
-    private func drawLegionIcon(in rect: NSRect) {
-        let s = rect.width
-        let iconColor = NSColor.secondaryLabelColor
-
-        // 3x3 grid points scaled to the icon area
-        let padding: CGFloat = 2
-        let gridSize = s - padding * 2
-        let step = gridSize / 2
-
-        let points: [NSPoint] = (0..<3).flatMap { row in
-            (0..<3).map { col in
-                NSPoint(
-                    x: padding + CGFloat(col) * step,
-                    y: padding + CGFloat(row) * step
-                )
-            }
-        }
-
-        // Connections: horizontal, vertical, and diagonal
-        let connections: [(Int, Int)] = [
-            (0, 1), (1, 2), (3, 4), (4, 5), (6, 7), (7, 8),  // horizontal
-            (0, 3), (3, 6), (1, 4), (4, 7), (2, 5), (5, 8),  // vertical
-            (1, 3), (1, 5), (3, 7), (5, 7),                   // diagonal
-        ]
-
-        // Draw connections
-        iconColor.withAlphaComponent(0.35).setStroke()
-        for (a, b) in connections {
-            let path = NSBezierPath()
-            path.move(to: points[a])
-            path.line(to: points[b])
-            path.lineWidth = 0.8
-            path.stroke()
-        }
-
-        // Draw nodes
-        let nodeRadius: CGFloat = 1.4
-        for (i, p) in points.enumerated() {
-            let isCenter = (i == 4)
-            let r = isCenter ? nodeRadius * 1.3 : nodeRadius
-            iconColor.withAlphaComponent(0.8).setFill()
-            NSBezierPath(ovalIn: NSRect(
-                x: p.x - r, y: p.y - r,
-                width: r * 2, height: r * 2
-            )).fill()
-        }
-    }
-
-    private func drawStatusBadge(in rect: NSRect, status: OverallStatus) {
-        let badgeRadius: CGFloat = 3.5
-        let badgeCenter = NSPoint(
-            x: rect.maxX - badgeRadius - 0.5,
-            y: rect.minY + badgeRadius + 0.5
-        )
-
-        let color: NSColor
-        switch status {
-        case .allHealthy:  color = .systemGreen
-        case .setupNeeded: color = .systemOrange
-        case .degraded:    color = .systemYellow
-        case .allDown:     color = .systemRed
-        case .checking:    color = .systemGray
-        }
-
-        // White outline behind badge for contrast
-        NSColor.white.setFill()
-        NSBezierPath(ovalIn: NSRect(
-            x: badgeCenter.x - badgeRadius - 1,
-            y: badgeCenter.y - badgeRadius - 1,
-            width: (badgeRadius + 1) * 2,
-            height: (badgeRadius + 1) * 2
-        )).fill()
-
-        // Colored badge
-        color.setFill()
-        NSBezierPath(ovalIn: NSRect(
-            x: badgeCenter.x - badgeRadius,
-            y: badgeCenter.y - badgeRadius,
-            width: badgeRadius * 2,
-            height: badgeRadius * 2
-        )).fill()
-    }
-}
-
-// MARK: - Menu Content
-
-struct MenuContent: View {
-    @EnvironmentObject var manager: ServiceManager
-    @State private var launchAtLogin = false
-
-    var body: some View {
-        // Overall status header
-        HStack {
-            Circle()
-                .fill(overallColor)
-                .frame(width: 8, height: 8)
-            Text("Legion: \(manager.overallStatus.displayText)")
-                .font(.headline)
-        }
-
-        Divider()
-
-        // Individual service statuses
-        ForEach(manager.services) { service in
-            HStack {
-                Circle()
-                    .fill(statusColor(service.status))
-                    .frame(width: 6, height: 6)
-                Text(service.name.displayName)
-                Spacer()
-                Text(service.status.rawValue)
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-            }
-        }
-
-        Divider()
-
-        // Control buttons
-        Button("Start All Services") { manager.startAll() }
-            .disabled(manager.overallStatus == .allHealthy)
-
-        Button("Stop All Services") { manager.stopAll() }
-            .disabled(manager.overallStatus == .allDown)
-
-        Button("Restart Daemon") { manager.restartDaemon() }
-
-        Divider()
-
-        Button("Open Dashboard") {
-            NSApp.delegate?.perform(#selector(AppDelegate.showDashboard))
-        }
-
-        Button("Open Web API") {
-            if let url = URL(string: "http://localhost:4567") {
-                NSWorkspace.shared.open(url)
-            }
-        }
-
-        Divider()
-
-        Toggle("Launch at Login", isOn: $launchAtLogin)
-            .onChange(of: launchAtLogin) { newValue in
-                setLaunchAtLogin(newValue)
-            }
-
-        Button("Quit") {
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q")
-    }
-
-    private var overallColor: Color {
-        switch manager.overallStatus {
-        case .allHealthy:  return .green
-        case .setupNeeded: return .orange
-        case .degraded:    return .yellow
-        case .allDown:     return .red
-        case .checking:    return .gray
-        }
-    }
-
-    private func statusColor(_ status: ServiceStatus) -> Color {
-        switch status {
-        case .running:  return .green
-        case .stopped:  return .red
-        case .starting: return .yellow
-        case .unknown:  return .gray
-        }
-    }
-
-    private func setLaunchAtLogin(_ enabled: Bool) {
-        if #available(macOS 13.0, *) {
-            let service = SMAppService.mainApp
-            do {
-                if enabled {
-                    try service.register()
-                } else {
-                    try service.unregister()
-                }
-            } catch {
-                print("Failed to set login item: \(error)")
-            }
         }
     }
 }
@@ -227,10 +19,9 @@ struct MenuContent: View {
 extension OverallStatus {
     var displayText: String {
         switch self {
-        case .allHealthy:  return "All Systems Go"
+        case .online:      return "Online"
         case .setupNeeded: return "Setup Required"
-        case .degraded:    return "Degraded"
-        case .allDown:     return "All Stopped"
+        case .offline:     return "Offline"
         case .checking:    return "Checking..."
         }
     }
@@ -238,9 +29,11 @@ extension OverallStatus {
 
 // MARK: - AppDelegate
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    var statusItem: NSStatusItem?
     var statusWindow: NSWindow?
     var onboardingWindow: NSWindow?
+    private var statusObservation: NSKeyValueObservation?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Keep alive as menu bar app
@@ -250,6 +43,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Set app icon
         NSApplication.shared.applicationIconImage = Self.generateAppIcon()
+
+        // Set up status bar item
+        setupStatusItem()
 
         // Check if onboarding is needed
         if ServiceManager.shared.setupNeeded {
@@ -266,12 +62,108 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    // MARK: - Status Item
+
+    private func setupStatusItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+
+        if let button = statusItem?.button {
+            button.image = menuBarIcon(for: .checking)
+            button.target = self
+            button.action = #selector(statusItemClicked(_:))
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+
+        // Observe status changes to update the icon
+        Task { @MainActor in
+            // Poll the icon every second to keep it in sync
+            Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor in
+                    self.statusItem?.button?.image = self.menuBarIcon(for: ServiceManager.shared.overallStatus)
+                }
+            }
+        }
+    }
+
+    @MainActor @objc private func statusItemClicked(_ sender: Any?) {
+        guard let event = NSApp.currentEvent else {
+            showDashboard()
+            return
+        }
+
+        if event.type == .rightMouseUp {
+            // Right-click: show context menu
+            showContextMenu()
+        } else {
+            // Left-click: open dashboard
+            showDashboard()
+        }
+    }
+
+    @MainActor private func showContextMenu() {
+        let menu = NSMenu()
+
+        let statusText = "Legion: \(ServiceManager.shared.overallStatus.displayText)"
+        let statusItem = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
+        statusItem.isEnabled = false
+        menu.addItem(statusItem)
+
+        menu.addItem(.separator())
+
+        menu.addItem(NSMenuItem(title: "Open Dashboard", action: #selector(showDashboard), keyEquivalent: "d"))
+
+        menu.addItem(.separator())
+
+        let launchItem = NSMenuItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin(_:)), keyEquivalent: "")
+        if let service = try? SMAppService.mainApp.status, service == .enabled {
+            launchItem.state = .on
+        }
+        menu.addItem(launchItem)
+
+        menu.addItem(.separator())
+
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+
+        if let button = self.statusItem?.button {
+            self.statusItem?.menu = menu
+            menu.delegate = self
+            button.performClick(nil)
+        }
+    }
+
+    // Clear menu after it closes so left-click works again
+    func menuDidClose(_ menu: NSMenu) {
+        statusItem?.menu = nil
+    }
+
+    @objc private func openWebAPI() {
+        if let url = URL(string: "http://localhost:4567") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func toggleLaunchAtLogin(_ sender: NSMenuItem) {
+        let service = SMAppService.mainApp
+        do {
+            if sender.state == .on {
+                try service.unregister()
+            } else {
+                try service.register()
+            }
+        } catch {
+            print("Failed to set login item: \(error)")
+        }
+    }
+
     // MARK: - Window Management
 
     @MainActor @objc func showDashboard() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+
         if let window = statusWindow, window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            window.orderFrontRegardless()
+            window.makeKey()
             return
         }
 
@@ -292,7 +184,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
 
         statusWindow = window
-        NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
     @MainActor func showOnboarding() {
@@ -327,6 +218,89 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
+    // MARK: - Menu Bar Icon
+
+    private func menuBarIcon(for status: OverallStatus) -> NSImage {
+        let size = NSSize(width: 18, height: 18)
+        let image = NSImage(size: size, flipped: false) { rect in
+            self.drawLegionIcon(in: rect)
+            self.drawStatusBadge(in: rect, status: status)
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    private func drawLegionIcon(in rect: NSRect) {
+        let s = rect.width
+        let iconColor = NSColor.white
+
+        let padding: CGFloat = 2.5
+        let gridSize = s - padding * 2 - 2
+        let step = gridSize / 2
+        let offsetX: CGFloat = padding
+        let offsetY: CGFloat = padding
+
+        let points: [NSPoint] = (0..<3).flatMap { row in
+            (0..<3).map { col in
+                NSPoint(
+                    x: offsetX + CGFloat(col) * step,
+                    y: offsetY + CGFloat(row) * step
+                )
+            }
+        }
+
+        let connections: [(Int, Int)] = [
+            (0, 1), (1, 2), (3, 4), (4, 5), (6, 7), (7, 8),
+            (0, 3), (3, 6), (1, 4), (4, 7), (2, 5), (5, 8),
+            (1, 3), (1, 5), (3, 7), (5, 7),
+        ]
+
+        iconColor.withAlphaComponent(0.5).setStroke()
+        for (a, b) in connections {
+            let path = NSBezierPath()
+            path.move(to: points[a])
+            path.line(to: points[b])
+            path.lineWidth = 0.7
+            path.stroke()
+        }
+
+        let nodeRadius: CGFloat = 1.5
+        for (i, p) in points.enumerated() {
+            let isCenter = (i == 4)
+            let r = isCenter ? nodeRadius * 1.4 : nodeRadius
+            iconColor.setFill()
+            NSBezierPath(ovalIn: NSRect(
+                x: p.x - r, y: p.y - r,
+                width: r * 2, height: r * 2
+            )).fill()
+        }
+    }
+
+    private func drawStatusBadge(in rect: NSRect, status: OverallStatus) {
+        let badgeRadius: CGFloat = 3.5
+        let badgeCenter = NSPoint(
+            x: rect.maxX - badgeRadius - 0.5,
+            y: rect.maxY - badgeRadius - 0.5
+        )
+
+        let color: NSColor
+        switch status {
+        case .online:      color = .systemGreen
+        case .setupNeeded: color = .systemOrange
+        case .offline:     color = .systemRed
+        case .checking:    color = .systemGray
+        }
+
+        color.setFill()
+        NSBezierPath(ovalIn: NSRect(
+            x: badgeCenter.x - badgeRadius,
+            y: badgeCenter.y - badgeRadius,
+            width: badgeRadius * 2,
+            height: badgeRadius * 2
+        )).fill()
+    }
+
     // MARK: - App Icon
 
     static func generateAppIcon() -> NSImage {
@@ -339,7 +313,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return image
         }
 
-        // Background rounded rect with Legion purple gradient
         let bgPath = NSBezierPath(
             roundedRect: NSRect(x: 0, y: 0, width: s, height: s),
             xRadius: s * 0.22, yRadius: s * 0.22
@@ -354,10 +327,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let gradient = CGGradient(colorsSpace: colorSpace, colors: colors, locations: [0.0, 1.0])!
         context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: s), end: CGPoint(x: s, y: 0), options: [])
 
-        // 3x3 Network grid — Legion branding
         let cx = s / 2, cy = s / 2
         let gridSpacing = s * 0.16
-        let nodeColor = NSColor(red: 0.5, green: 0.47, blue: 0.87, alpha: 1.0) // Legion purple
+        let nodeColor = NSColor(red: 0.5, green: 0.47, blue: 0.87, alpha: 1.0)
         let litColor = NSColor(red: 0.77, green: 0.76, blue: 0.96, alpha: 1.0)
 
         var gridPoints: [CGPoint] = []
@@ -370,7 +342,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // "I" glyph lit nodes (top row, center col, bottom row)
         let litNodes: Set<Int> = [0, 1, 2, 4, 6, 7, 8]
 
         let connections: [(Int, Int)] = [
@@ -380,7 +351,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ]
         let litEdges: Set<String> = ["0-1", "1-2", "1-4", "4-7", "6-7", "7-8"]
 
-        // Draw connections
         for (a, b) in connections {
             let key = a < b ? "\(a)-\(b)" : "\(b)-\(a)"
             let isLit = litEdges.contains(key)
@@ -394,7 +364,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             context.strokePath()
         }
 
-        // Draw nodes
         let nodeRadius = s * 0.028
         for (i, p) in gridPoints.enumerated() {
             let isLit = litNodes.contains(i)
@@ -402,7 +371,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let fill = isLit ? litColor : nodeColor.withAlphaComponent(0.8)
 
             if isLit {
-                // Glow
                 litColor.withAlphaComponent(0.1).setFill()
                 NSBezierPath(ovalIn: NSRect(x: p.x - r * 2.5, y: p.y - r * 2.5, width: r * 5, height: r * 5)).fill()
             }
@@ -410,13 +378,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             fill.setFill()
             NSBezierPath(ovalIn: NSRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)).fill()
 
-            // Inner highlight
             NSColor.white.withAlphaComponent(isLit ? 0.7 : 0.4).setFill()
             let ir = r * 0.4
             NSBezierPath(ovalIn: NSRect(x: p.x - ir, y: p.y - ir, width: ir * 2, height: ir * 2)).fill()
         }
 
-        // Frame
         let frameRect = NSRect(
             x: cx - gridSpacing * 1.5 - s * 0.04,
             y: cy - gridSpacing * 1.5 - s * 0.04,
