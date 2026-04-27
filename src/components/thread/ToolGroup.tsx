@@ -9,6 +9,7 @@ import {
   LoaderIcon,
   ScissorsIcon,
   DownloadIcon,
+  FolderOpenIcon,
 } from 'lucide-react';
 import { app } from '@/lib/ipc-client';
 import { formatElapsed } from '@/lib/response-timing';
@@ -66,6 +67,7 @@ export const ToolCallDisplay: FC<{ part: ToolCallPart }> = ({ part }) => {
   const canShowOriginal = wasCompacted && part.originalResult !== undefined;
   const isSummarizing = part.compactionPhase === 'start';
   const mediaResult = hasResult && !isError ? detectMediaResult(part.result) : null;
+  const resultPaths = hasResult ? extractFilePaths(canShowOriginal && showOriginal ? part.originalResult : part.result) : [];
 
   return (
     <div className="rounded-lg border bg-card text-sm overflow-hidden">
@@ -143,6 +145,7 @@ export const ToolCallDisplay: FC<{ part: ToolCallPart }> = ({ part }) => {
             >
               {/* Media preview for image/video/audio generation results */}
               {mediaResult && <MediaPreview media={mediaResult} />}
+              {resultPaths.length > 0 && <PathLinks paths={resultPaths} />}
               <CodeBlock
                 code={formatResult(canShowOriginal && showOriginal ? part.originalResult : part.result)}
                 language="json"
@@ -254,6 +257,29 @@ const MediaPreview: FC<{ media: MediaResult }> = ({ media }) => {
   }
 
   return null;
+};
+
+const PathLinks: FC<{ paths: string[] }> = ({ paths }) => {
+  const openPath = useCallback((path: string) => {
+    void app.shell.openPath(path);
+  }, []);
+
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {paths.slice(0, 8).map((path) => (
+        <button
+          key={path}
+          type="button"
+          onClick={() => openPath(path)}
+          className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/70 bg-muted/50 px-2 py-1 text-[10px] font-mono text-muted-foreground hover:bg-muted hover:text-foreground"
+          title={path}
+        >
+          <FolderOpenIcon className="h-3 w-3 shrink-0" />
+          <span className="truncate">{path}</span>
+        </button>
+      ))}
+    </div>
+  );
 };
 
 /* ── Status Badges ── */
@@ -415,6 +441,33 @@ function sanitizeResultForDisplay(result: unknown): unknown {
   }
 
   return visible;
+}
+
+function extractFilePaths(result: unknown): string[] {
+  const paths = new Set<string>();
+  const visit = (value: unknown): void => {
+    if (typeof value === 'string') {
+      for (const match of value.matchAll(/(?:^|[\s"'`])((?:~|\/Users|\/Volumes|\/tmp|\/var|\/opt|\/Applications|[A-Za-z]:\\)[^\s"'`<>{}[\]]+)/g)) {
+        paths.add(match[1].replace(/[),.;:]+$/g, ''));
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+
+    if (value && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      for (const [key, child] of Object.entries(record)) {
+        if (/path|file|directory/i.test(key)) visit(child);
+      }
+    }
+  };
+
+  visit(result);
+  return [...paths];
 }
 
 function formatLiveOutput(output?: { stdout?: string; stderr?: string; truncated?: boolean; stopped?: boolean }): string {

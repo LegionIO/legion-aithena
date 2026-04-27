@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.18] - 2026-04-27
+
+### Added
+- Tool results can now expose detected local file paths as clickable controls backed by a `shell:open-path` IPC handler that opens existing paths through the native shell (#43)
+
 ## [1.1.17] - 2026-04-27
 
 ### Added

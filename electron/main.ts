@@ -23,6 +23,7 @@ import { registerComputerUseHandlers } from './ipc/computer-use.js';
 import { registerKnowledgeHandlers } from './ipc/knowledge.js';
 import { registerClipboardHandlers } from './ipc/clipboard.js';
 import { registerCliToolsHandlers } from './ipc/cli-tools.js';
+import { registerShellHandlers } from './ipc/shell.js';
 import { closeAllOverlayWindows } from './computer-use/overlay-window.js';
 import { registerTriggerDispatchHandlers, handleSseEvent } from './ipc/trigger-dispatch.js';
 import { registerGaiaThreadHandlers } from './ipc/gaia-thread.js';
@@ -470,6 +471,7 @@ if (gotSingleInstanceLock) {
     registerKnowledgeHandlers(ipcMain, APP_HOME, getConfig);
     registerClipboardHandlers(ipcMain);
     registerCliToolsHandlers(ipcMain, getConfig);
+    registerShellHandlers(ipcMain);
 
     // Auto-seed computer use display settings on startup.
     // If allowedDisplays is empty, populate it with all discovered displays

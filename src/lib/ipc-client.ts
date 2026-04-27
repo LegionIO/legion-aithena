@@ -213,6 +213,9 @@ type AppAPI = {
       binaries: Array<{ name: string; available: boolean }>;
     }>>;
   };
+  shell: {
+    openPath: (path: string) => Promise<{ ok: boolean; error?: string }>;
+  };
   image: {
     fetch: (url: string) => Promise<{ data?: string; mime?: string; error?: string }>;
     save: (url: string, suggestedName?: string) => Promise<{ canceled?: boolean; filePath?: string; error?: string }>;
