@@ -177,6 +177,39 @@ function toStoredContent(parts: ContentPart[]): ThreadMessageLike['content'] {
   return parts as unknown as ThreadMessageLike['content'];
 }
 
+function normalizeAssistantText(value: unknown): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+      || (trimmed.startsWith('{') && trimmed.endsWith('}'))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        const normalized = normalizeAssistantText(parsed);
+        if (normalized) return normalized;
+      } catch {
+        // Not a serialized content block. Render the original string.
+      }
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((part) => normalizeAssistantText(part)).join('');
+  }
+
+  if (value && typeof value === 'object') {
+    const block = value as Record<string, unknown>;
+    if (block.type === 'text' && typeof block.text === 'string') return block.text;
+    if (typeof block.text === 'string') return block.text;
+    if (block.content !== undefined) return normalizeAssistantText(block.content);
+    if (block.response !== undefined) return normalizeAssistantText(block.response);
+  }
+
+  return '';
+}
+
 function extractUserText(messages: ThreadMessageLike[]): string {
   const firstUser = messages.find((message) => message.role === 'user');
   if (!firstUser || !Array.isArray(firstUser.content)) return '';
@@ -448,14 +481,17 @@ function getOrCreateAssistantInAcc(acc: MessageAccumulator): { msg: StoredMessag
 }
 
 function applyTextDelta(acc: MessageAccumulator, text: string): void {
+  const normalizedText = normalizeAssistantText(text);
+  if (!normalizedText) return;
+
   const { msg, idx } = getOrCreateAssistantInAcc(acc);
   const content = (Array.isArray(msg.content) ? [...msg.content] : []) as ContentPart[];
   const lastPart = content[content.length - 1];
 
   if (lastPart?.type === 'text' && (lastPart.source ?? 'assistant') === 'assistant') {
-    content[content.length - 1] = { type: 'text', source: 'assistant', text: lastPart.text + text };
+    content[content.length - 1] = { type: 'text', source: 'assistant', text: lastPart.text + normalizedText };
   } else {
-    content.push({ type: 'text', source: 'assistant', text });
+    content.push({ type: 'text', source: 'assistant', text: normalizedText });
   }
   acc.messages[idx] = { ...msg, content: toStoredContent(content) };
 }

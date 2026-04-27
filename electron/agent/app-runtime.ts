@@ -216,6 +216,39 @@ function stringifyValue(value: unknown, maxLength = 2000): string {
   }
 }
 
+function normalizeAssistantText(value: unknown): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+      || (trimmed.startsWith('{') && trimmed.endsWith('}'))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        const normalized = normalizeAssistantText(parsed);
+        if (normalized) return normalized;
+      } catch {
+        // Not a serialized content block. Pass through the original string.
+      }
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((part) => normalizeAssistantText(part)).join('');
+  }
+
+  if (value && typeof value === 'object') {
+    const block = value as Record<string, unknown>;
+    if (block.type === 'text' && typeof block.text === 'string') return block.text;
+    if (typeof block.text === 'string') return block.text;
+    if (block.content !== undefined) return normalizeAssistantText(block.content);
+    if (block.response !== undefined) return normalizeAssistantText(block.response);
+  }
+
+  return '';
+}
+
 function toIsoTimestamp(value: unknown): string | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return new Date(value).toISOString();
@@ -395,7 +428,7 @@ async function* consumeDaemonSSE(
       if (!eventName) return [];
 
       if (eventName === 'text-delta' || eventName === 'text_delta' || eventName === 'delta') {
-        const text = (payload.text as string) || (payload.delta as string) || '';
+        const text = normalizeAssistantText(payload.text ?? payload.delta);
         return text ? [{ conversationId, type: 'text-delta', text }] : [];
       }
 
@@ -538,8 +571,9 @@ async function* consumeDaemonSSE(
         return [{ conversationId, type: 'compaction', data: { event: eventName, ...payload } }];
       }
 
-      if (payload.response && typeof payload.response === 'string') {
-        return [{ conversationId, type: 'text-delta', text: payload.response as string }];
+      if (payload.response !== undefined) {
+        const text = normalizeAssistantText(payload.response);
+        return text ? [{ conversationId, type: 'text-delta', text }] : [];
       }
 
       return [];
@@ -657,11 +691,7 @@ async function* handleDaemonSyncResponse(
     return;
   }
 
-  const text = typeof data.data?.content === 'string'
-    ? data.data.content
-    : typeof data.data?.response === 'string'
-      ? data.data.response
-      : '';
+  const text = normalizeAssistantText(data.data?.content ?? data.data?.response);
   if (text) {
     yield { conversationId, type: 'text-delta', text };
   } else {

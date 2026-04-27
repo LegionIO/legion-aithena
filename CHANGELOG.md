@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.16] - 2026-04-27
+
+### Fixed
+- Assistant response ingestion now unwraps text content blocks, including serialized `[{\"type\":\"text\",\"text\":\"...\"}]` payloads, before rendering so messages display as markdown instead of raw JSON (#28)
+
 ## [1.1.15] - 2026-04-27
 
 ### Fixed
