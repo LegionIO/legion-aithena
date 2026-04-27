@@ -67,6 +67,7 @@ import { ComputerSetupPanel } from './ComputerSetupPanel';
 import { useComputerUse } from '@/providers/ComputerUseProvider';
 import { shouldShowComputerSetup, type ComputerSession } from '../../../shared/computer-use';
 import { getResponseTiming } from '@/lib/response-timing';
+import { SPINNER_VERBS } from '@/config/spinner-verbs';
 const MATRIX_GLYPHS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890@#$%^&*+-/~{[|`]}<>01';
 
 export type ThreadMode = 'chat' | 'computer';
@@ -633,6 +634,14 @@ const ToolFallback: FC<{
     stopped?: boolean;
   };
 }> = (props) => {
+  const threadRuntime = useThreadRuntime();
+  const handleSendFeedback = useCallback((text: string) => {
+    threadRuntime.append({
+      role: 'user',
+      content: [{ type: 'text', text }],
+    });
+  }, [threadRuntime]);
+
   // Render sub-agent tool calls with the specialized component
   if (props.toolName === 'sub_agent') {
     return (
@@ -666,6 +675,7 @@ const ToolFallback: FC<{
           compactionPhase: props.compactionPhase,
           liveOutput: props.liveOutput,
         }}
+        onSendFeedback={handleSendFeedback}
       />
     </div>
   );
@@ -729,6 +739,12 @@ const assistantContentComponents = {
 type ResponseStatus = 'streaming' | 'done' | 'interrupted' | 'error';
 
 const ResponseStatusPill: FC<{ status: ResponseStatus }> = ({ status }) => {
+  const streamingLabel = useState(() => {
+    const verb = SPINNER_VERBS.length > 0
+      ? SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)]
+      : 'Thinking';
+    return `${verb}...`;
+  })[0];
   const styles: Record<ResponseStatus, string> = {
     streaming: 'border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400',
     done: 'border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400',
@@ -736,7 +752,7 @@ const ResponseStatusPill: FC<{ status: ResponseStatus }> = ({ status }) => {
     error: 'border-destructive/20 bg-destructive/10 text-destructive',
   };
   const labels: Record<ResponseStatus, string> = {
-    streaming: 'Streaming...',
+    streaming: streamingLabel,
     done: 'Done',
     interrupted: 'Interrupted',
     error: 'Error',

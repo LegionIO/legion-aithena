@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.1.21] - 2026-04-27
+
+### Added
+- Streaming response status now samples a stable verb from a spinner verb list for each new agent turn, with a Thinking fallback if the list is empty (#46)
+
+## [1.1.20] - 2026-04-27
+
+### Fixed
+- Process execution, MCP stdio servers, and CLI tool binary checks now use a cached login-shell environment so tools installed by the user's shell profile are available from the desktop app (#48)
+
+## [1.1.19] - 2026-04-27
+
+### Added
+- Tool result rendering now classifies file, web, command, structured, and text results, summarizes detected paths, URLs, and TODOs, opens HTTP(S) URLs natively, adds per-tool icons, and can send TODO feedback back into the thread (#49)
+
+## [1.1.18] - 2026-04-27
+
+### Added
+- Tool results can now expose detected local file paths as clickable controls backed by a `shell:open-path` IPC handler that opens existing paths through the native shell (#43)
+
+## [1.1.17] - 2026-04-27
+
+### Added
+- Settings now includes a CLI Tools manager that shows built-in tools, checks binary availability, allows custom CLI tools, and enables or disables CLI tools without deleting built-in definitions (#37)
+
+## [1.1.16] - 2026-04-27
+
+### Fixed
+- Assistant response ingestion now unwraps text content blocks, including serialized `[{\"type\":\"text\",\"text\":\"...\"}]` payloads, before rendering so messages display as markdown instead of raw JSON (#28)
+
+## [1.1.15] - 2026-04-27
+
+### Fixed
+- Mission Control now labels persisted task rows as Tracked Tasks and adds a separate recent Activity card from daemon events so users can distinguish persisted jobs from live runner activity (#59)
+
 ## [1.1.14] - 2026-04-27
 
 ### Fixed

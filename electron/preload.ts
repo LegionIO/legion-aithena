@@ -266,6 +266,17 @@ const appAPI = {
       ipcRenderer.invoke('clipboard:write-text', text) as Promise<{ ok: boolean; error?: string }>,
   },
 
+  cliTools: {
+    list: () => ipcRenderer.invoke('cli-tools:list') as Promise<unknown[]>,
+  },
+
+  shell: {
+    openPath: (path: string) =>
+      ipcRenderer.invoke('shell:open-path', path) as Promise<{ ok: boolean; error?: string }>,
+    openExternal: (url: string) =>
+      ipcRenderer.invoke('shell:open-external', url) as Promise<{ ok: boolean; error?: string }>,
+  },
+
   // Image utilities (fetched via main process to bypass CORS)
   image: {
     fetch: (url: string) => ipcRenderer.invoke('image:fetch', url) as Promise<{ data?: string; mime?: string; error?: string }>,

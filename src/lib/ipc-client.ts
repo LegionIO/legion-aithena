@@ -200,6 +200,23 @@ type AppAPI = {
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; error?: string }>;
   };
+  cliTools: {
+    list: () => Promise<Array<{
+      name: string;
+      binary: string;
+      extraBinaries?: string[];
+      description: string;
+      prefix?: string;
+      enabled?: boolean;
+      builtIn?: boolean;
+      available: boolean;
+      binaries: Array<{ name: string; available: boolean }>;
+    }>>;
+  };
+  shell: {
+    openPath: (path: string) => Promise<{ ok: boolean; error?: string }>;
+    openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
+  };
   image: {
     fetch: (url: string) => Promise<{ data?: string; mime?: string; error?: string }>;
     save: (url: string, suggestedName?: string) => Promise<{ canceled?: boolean; filePath?: string; error?: string }>;
