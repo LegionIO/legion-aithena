@@ -127,6 +127,7 @@ type AppAPI = {
     absorberResolve: (input: string) => Promise<DaemonResult>;
     absorberDispatch: (input: string, scope?: string) => Promise<DaemonResult>;
     absorberJob: (jobId: string) => Promise<DaemonResult>;
+    llmModels: () => Promise<DaemonResult>;
     health: () => Promise<DaemonResult>;
     ready: () => Promise<DaemonResult>;
     metrics: () => Promise<DaemonResult>;
@@ -198,6 +199,23 @@ type AppAPI = {
   };
   clipboard: {
     writeText: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  };
+  cliTools: {
+    list: () => Promise<Array<{
+      name: string;
+      binary: string;
+      extraBinaries?: string[];
+      description: string;
+      prefix?: string;
+      enabled?: boolean;
+      builtIn?: boolean;
+      available: boolean;
+      binaries: Array<{ name: string; available: boolean }>;
+    }>>;
+  };
+  shell: {
+    openPath: (path: string) => Promise<{ ok: boolean; error?: string }>;
+    openExternal: (url: string) => Promise<{ ok: boolean; error?: string }>;
   };
   image: {
     fetch: (url: string) => Promise<{ data?: string; mime?: string; error?: string }>;

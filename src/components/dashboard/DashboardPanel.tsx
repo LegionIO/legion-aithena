@@ -59,8 +59,8 @@ const StatusDot: FC<{ status: string }> = ({ status }) => {
   return <span className={`inline-block h-2 w-2 rounded-full ${color}`} />;
 };
 
-const StatCard: FC<{ icon: FC<{ className?: string }>; label: string; value: string; sub?: string; accent?: string }> = ({ icon: Icon, label, value, sub, accent }) => (
-  <div className="rounded-xl border border-border/40 bg-card/60 p-4 transition-colors hover:bg-card/80">
+const StatCard: FC<{ icon: FC<{ className?: string }>; label: string; value: string; sub?: string; accent?: string; title?: string }> = ({ icon: Icon, label, value, sub, accent, title }) => (
+  <div className="rounded-xl border border-border/40 bg-card/60 p-4 transition-colors hover:bg-card/80" title={title}>
     <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
       <Icon className={`h-3.5 w-3.5 ${accent || ''}`} />
       {label}
@@ -88,6 +88,19 @@ function fmtAgo(iso: string): string {
   if (ms < 3600_000) return `${Math.floor(ms / 60_000)}m`;
   if (ms < 86400_000) return `${Math.floor(ms / 3600_000)}h`;
   return `${Math.floor(ms / 86400_000)}d`;
+}
+
+function workerState(worker: Record<string, unknown>): string {
+  const state = worker.lifecycle_state ?? worker.status;
+  return typeof state === 'string' ? state : '';
+}
+
+function recentActivityCount(notifications: Array<{ timestamp: string }>, windowMs = 15_000): number {
+  const cutoff = Date.now() - windowMs;
+  return notifications.filter((notification) => {
+    const timestamp = Date.parse(notification.timestamp);
+    return !Number.isNaN(timestamp) && timestamp >= cutoff;
+  }).length;
 }
 
 export const DashboardPanel: FC<{ onClose: () => void }> = () => {
@@ -140,8 +153,8 @@ export const DashboardPanel: FC<{ onClose: () => void }> = () => {
         const arr = Array.isArray(wRes.data) ? wRes.data as Record<string, unknown>[] : [];
         setWorkers({
           total: arr.length,
-          healthy: arr.filter((w) => w.status === 'healthy' || w.status === 'active' || w.status === 'running').length,
-          degraded: arr.filter((w) => w.status === 'degraded' || w.status === 'unhealthy').length,
+          healthy: arr.filter((w) => ['healthy', 'active', 'running'].includes(workerState(w))).length,
+          degraded: arr.filter((w) => ['degraded', 'unhealthy', 'paused'].includes(workerState(w))).length,
         });
       }
 
@@ -183,6 +196,7 @@ export const DashboardPanel: FC<{ onClose: () => void }> = () => {
   }, [refresh]);
 
   const recentEvents = notifications.slice(0, 8);
+  const activityLast15s = recentActivityCount(notifications);
 
   if (!connected && !loading) {
     return (
@@ -240,7 +254,7 @@ export const DashboardPanel: FC<{ onClose: () => void }> = () => {
         ) : (
           <>
             {/* Stat grid */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
               <StatCard
                 icon={ClockIcon}
                 label="Uptime"
@@ -249,10 +263,19 @@ export const DashboardPanel: FC<{ onClose: () => void }> = () => {
               />
               <StatCard
                 icon={LayersIcon}
-                label="Tasks"
+                label="Tracked Tasks"
                 value={String(tasks.total)}
                 sub={`${tasks.running} running · ${tasks.failed} failed`}
                 accent="text-primary"
+                title="Persisted task rows only: explicit task runs, schedules, and extensions that opt into task tracking."
+              />
+              <StatCard
+                icon={ActivityIcon}
+                label="Activity"
+                value={String(activityLast15s)}
+                sub="events in 15s"
+                accent="text-violet-400"
+                title="Recent daemon event-bus activity, including ephemeral runner and actor invocations."
               />
               <StatCard
                 icon={CpuIcon}
@@ -319,7 +342,8 @@ export const DashboardPanel: FC<{ onClose: () => void }> = () => {
                   {[
                     { label: 'Daemon', status: connected ? 'healthy' : 'error', detail: connected ? 'Running' : 'Offline' },
                     { label: 'Workers', status: workers.degraded > 0 ? 'warn' : workers.total > 0 ? 'healthy' : 'warn', detail: `${workers.healthy}/${workers.total} healthy` },
-                    { label: 'Tasks', status: tasks.failed > 0 ? 'warn' : 'healthy', detail: `${tasks.running} active, ${tasks.failed} failed` },
+                    { label: 'Tracked Tasks', status: tasks.failed > 0 ? 'warn' : 'healthy', detail: `${tasks.running} active, ${tasks.failed} failed` },
+                    { label: 'Activity', status: activityLast15s > 0 ? 'healthy' : 'warn', detail: `${activityLast15s} events in 15s` },
                     { label: 'GAIA', status: gaia ? 'healthy' : 'warn', detail: gaia?.mode ? `${gaia.mode} mode` : 'Not available' },
                     { label: 'Extensions', status: extensions > 0 ? 'healthy' : 'warn', detail: `${extensions} loaded` },
                   ].map((row) => (

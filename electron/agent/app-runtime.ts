@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
 import type { AppConfig } from '../config/schema.js';
 import { resolveDaemonUrl, resolveAuthToken } from '../lib/daemon-client.js';
-import type { LLMModelConfig } from './model-catalog.js';
+import type { LLMModelConfig, LLMProviderType } from './model-catalog.js';
 import type { StreamEvent } from './mastra-agent.js';
 import { withBrandUserAgent } from '../utils/user-agent.js';
 
@@ -145,6 +145,16 @@ function rubyPathCandidates(): string[] {
   ].filter(Boolean);
 }
 
+function mapProviderForDaemon(provider: LLMProviderType | string | undefined): string | undefined {
+  if (!provider) return undefined;
+  switch (provider) {
+    case 'amazon-bedrock': return 'bedrock';
+    case 'openai-compatible': return undefined;
+    case 'google': return 'gemini';
+    default: return provider;
+  }
+}
+
 function extractText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -204,6 +214,39 @@ function stringifyValue(value: unknown, maxLength = 2000): string {
   } catch {
     return String(value);
   }
+}
+
+function normalizeAssistantText(value: unknown): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+      || (trimmed.startsWith('{') && trimmed.endsWith('}'))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        const normalized = normalizeAssistantText(parsed);
+        if (normalized) return normalized;
+      } catch {
+        // Not a serialized content block. Pass through the original string.
+      }
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((part) => normalizeAssistantText(part)).join('');
+  }
+
+  if (value && typeof value === 'object') {
+    const block = value as Record<string, unknown>;
+    if (block.type === 'text' && typeof block.text === 'string') return block.text;
+    if (typeof block.text === 'string') return block.text;
+    if (block.content !== undefined) return normalizeAssistantText(block.content);
+    if (block.response !== undefined) return normalizeAssistantText(block.response);
+  }
+
+  return '';
 }
 
 function toIsoTimestamp(value: unknown): string | undefined {
@@ -268,15 +311,23 @@ async function* streamDaemonApp(options: StreamAppOptions): AsyncGenerator<Strea
     return;
   }
 
-  // Let the daemon use its own model/provider defaults.
-  // Only forward model/provider if explicitly configured for daemon override.
+  // Resolve model and provider to send to the daemon.
+  // Priority: user-selected model from dropdown → daemon config override → daemon defaults.
   const daemonRuntime = options.config.runtime?.daemon as Record<string, unknown> | undefined;
   const daemonModelOverride = daemonRuntime?.model as string | undefined;
   const daemonProviderOverride = daemonRuntime?.provider as string | undefined;
+
+  const selectedModel = options.modelConfig.modelName || undefined;
+  const selectedProvider = options.modelConfig.provider || undefined;
+  const isPassthrough = !selectedModel || options.modelConfig.modelName === '';
+
+  const effectiveModel = isPassthrough ? daemonModelOverride : selectedModel;
+  const effectiveProvider = isPassthrough ? daemonProviderOverride : mapProviderForDaemon(selectedProvider);
+
   const requestBody: Record<string, unknown> = {
     messages: normalizedMessages,
-    ...(daemonModelOverride ? { model: daemonModelOverride } : {}),
-    ...(daemonProviderOverride ? { provider: daemonProviderOverride } : {}),
+    ...(effectiveModel ? { model: effectiveModel } : {}),
+    ...(effectiveProvider ? { provider: effectiveProvider } : {}),
     ...(options.tools?.length ? { tools: options.tools } : {}),
     ...(options.cwd ? { cwd: options.cwd } : {}),
     ...(options.conversationId ? { conversation_id: options.conversationId } : {}),
@@ -377,7 +428,7 @@ async function* consumeDaemonSSE(
       if (!eventName) return [];
 
       if (eventName === 'text-delta' || eventName === 'text_delta' || eventName === 'delta') {
-        const text = (payload.text as string) || (payload.delta as string) || '';
+        const text = normalizeAssistantText(payload.text ?? payload.delta);
         return text ? [{ conversationId, type: 'text-delta', text }] : [];
       }
 
@@ -520,8 +571,9 @@ async function* consumeDaemonSSE(
         return [{ conversationId, type: 'compaction', data: { event: eventName, ...payload } }];
       }
 
-      if (payload.response && typeof payload.response === 'string') {
-        return [{ conversationId, type: 'text-delta', text: payload.response as string }];
+      if (payload.response !== undefined) {
+        const text = normalizeAssistantText(payload.response);
+        return text ? [{ conversationId, type: 'text-delta', text }] : [];
       }
 
       return [];
@@ -639,11 +691,7 @@ async function* handleDaemonSyncResponse(
     return;
   }
 
-  const text = typeof data.data?.content === 'string'
-    ? data.data.content
-    : typeof data.data?.response === 'string'
-      ? data.data.response
-      : '';
+  const text = normalizeAssistantText(data.data?.content ?? data.data?.response);
   if (text) {
     yield { conversationId, type: 'text-delta', text };
   } else {

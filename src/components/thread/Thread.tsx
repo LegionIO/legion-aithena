@@ -67,6 +67,7 @@ import { ComputerSetupPanel } from './ComputerSetupPanel';
 import { useComputerUse } from '@/providers/ComputerUseProvider';
 import { shouldShowComputerSetup, type ComputerSession } from '../../../shared/computer-use';
 import { getResponseTiming } from '@/lib/response-timing';
+import { SPINNER_VERBS } from '@/config/spinner-verbs';
 const MATRIX_GLYPHS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890@#$%^&*+-/~{[|`]}<>01';
 
 export type ThreadMode = 'chat' | 'computer';
@@ -633,6 +634,14 @@ const ToolFallback: FC<{
     stopped?: boolean;
   };
 }> = (props) => {
+  const threadRuntime = useThreadRuntime();
+  const handleSendFeedback = useCallback((text: string) => {
+    threadRuntime.append({
+      role: 'user',
+      content: [{ type: 'text', text }],
+    });
+  }, [threadRuntime]);
+
   // Render sub-agent tool calls with the specialized component
   if (props.toolName === 'sub_agent') {
     return (
@@ -666,6 +675,7 @@ const ToolFallback: FC<{
           compactionPhase: props.compactionPhase,
           liveOutput: props.liveOutput,
         }}
+        onSendFeedback={handleSendFeedback}
       />
     </div>
   );
@@ -726,6 +736,35 @@ const assistantContentComponents = {
   ToolGroup: ToolGroupWrapper,
 };
 
+type ResponseStatus = 'streaming' | 'done' | 'interrupted' | 'error';
+
+const ResponseStatusPill: FC<{ status: ResponseStatus }> = ({ status }) => {
+  const streamingLabel = useState(() => {
+    const verb = SPINNER_VERBS.length > 0
+      ? SPINNER_VERBS[Math.floor(Math.random() * SPINNER_VERBS.length)]
+      : 'Thinking';
+    return `${verb}...`;
+  })[0];
+  const styles: Record<ResponseStatus, string> = {
+    streaming: 'border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    done: 'border-green-500/20 bg-green-500/10 text-green-600 dark:text-green-400',
+    interrupted: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+    error: 'border-destructive/20 bg-destructive/10 text-destructive',
+  };
+  const labels: Record<ResponseStatus, string> = {
+    streaming: streamingLabel,
+    done: 'Done',
+    interrupted: 'Interrupted',
+    error: 'Error',
+  };
+
+  return (
+    <span className={`mb-2 inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold leading-none ${styles[status]}`}>
+      {labels[status]}
+    </span>
+  );
+};
+
 const AssistantMessage: FC = () => {
   const message = useMessage();
   const { activeRunStartedAt } = useAssistantResponseTiming();
@@ -778,6 +817,9 @@ const AssistantMessage: FC = () => {
   const hasInterrupt = content.some((p: { type: string; source?: string }) =>
     p.type === 'text' && (p.source === 'interrupt' || p.source === 'unspoken'),
   );
+  const hasError = content.some((p: { type: string; text?: string }) =>
+    p.type === 'text' && Boolean(p.text?.includes('**Error:**')),
+  );
 
   // Extract pipeline enrichments stored as a content part
   const enrichmentsPart = content.find((p: { type: string }) => p.type === 'enrichments') as
@@ -790,6 +832,7 @@ const AssistantMessage: FC = () => {
   const badgeStartedAt = responseTiming?.startedAt ?? (isRunning ? activeRunStartedAt ?? undefined : undefined);
   const badgeFinishedAt = responseTiming?.finishedAt;
   const showResponseBadge = Boolean(badgeStartedAt);
+  const responseStatus = isRunning ? 'streaming' : hasError ? 'error' : hasInterrupt ? 'interrupted' : 'done';
 
   return (
     <MessagePrimitive.Root className="group mb-3 flex justify-start">
@@ -807,6 +850,7 @@ const AssistantMessage: FC = () => {
               />
             </div>
           )}
+          <ResponseStatusPill status={responseStatus} />
           {isEmpty ? (
             <div className="flex items-center gap-2 py-0.5 text-muted-foreground">
               <BanIcon className="h-3.5 w-3.5" />

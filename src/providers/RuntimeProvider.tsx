@@ -146,6 +146,7 @@ type MessageAccumulator = {
   messages: StoredMessage[];
   headId: string | null;
   pendingAssistantTiming?: PendingAssistantTiming | null;
+  lastProgressAt?: number;
 };
 
 function nowIso(): string {
@@ -174,6 +175,39 @@ function msgId(): string {
 
 function toStoredContent(parts: ContentPart[]): ThreadMessageLike['content'] {
   return parts as unknown as ThreadMessageLike['content'];
+}
+
+function normalizeAssistantText(value: unknown): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith('[') && trimmed.endsWith(']'))
+      || (trimmed.startsWith('{') && trimmed.endsWith('}'))
+    ) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        const normalized = normalizeAssistantText(parsed);
+        if (normalized) return normalized;
+      } catch {
+        // Not a serialized content block. Render the original string.
+      }
+    }
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((part) => normalizeAssistantText(part)).join('');
+  }
+
+  if (value && typeof value === 'object') {
+    const block = value as Record<string, unknown>;
+    if (block.type === 'text' && typeof block.text === 'string') return block.text;
+    if (typeof block.text === 'string') return block.text;
+    if (block.content !== undefined) return normalizeAssistantText(block.content);
+    if (block.response !== undefined) return normalizeAssistantText(block.response);
+  }
+
+  return '';
 }
 
 function extractUserText(messages: ThreadMessageLike[]): string {
@@ -344,6 +378,8 @@ let globalSubAgentVersion = 0; // bumped on every change to trigger re-renders
 const streamAccumulators = new Map<string, MessageAccumulator>();
 /** Conversations where the next assistant message should be forced-new (after realtime call reconnect) */
 const forceNewAssistant = new Set<string>();
+const STALE_STREAM_MS = 60_000;
+const STALE_STREAM_CHECK_MS = 15_000;
 
 function createPendingAssistantTiming(startedAt = nowIso()): PendingAssistantTiming {
   return { startedAt };
@@ -361,6 +397,10 @@ function getAccumulatorStartedAt(acc: MessageAccumulator | undefined): string | 
   if (last?.role !== 'assistant') return null;
 
   return getResponseTiming(last)?.startedAt ?? null;
+}
+
+function touchAccumulator(acc: MessageAccumulator): void {
+  acc.lastProgressAt = Date.now();
 }
 
 function withPendingAssistantTiming(message: StoredMessage, acc: MessageAccumulator): StoredMessage {
@@ -441,14 +481,17 @@ function getOrCreateAssistantInAcc(acc: MessageAccumulator): { msg: StoredMessag
 }
 
 function applyTextDelta(acc: MessageAccumulator, text: string): void {
+  const normalizedText = normalizeAssistantText(text);
+  if (!normalizedText) return;
+
   const { msg, idx } = getOrCreateAssistantInAcc(acc);
   const content = (Array.isArray(msg.content) ? [...msg.content] : []) as ContentPart[];
   const lastPart = content[content.length - 1];
 
   if (lastPart?.type === 'text' && (lastPart.source ?? 'assistant') === 'assistant') {
-    content[content.length - 1] = { type: 'text', source: 'assistant', text: lastPart.text + text };
+    content[content.length - 1] = { type: 'text', source: 'assistant', text: lastPart.text + normalizedText };
   } else {
-    content.push({ type: 'text', source: 'assistant', text });
+    content.push({ type: 'text', source: 'assistant', text: normalizedText });
   }
   acc.messages[idx] = { ...msg, content: toStoredContent(content) };
 }
@@ -1397,13 +1440,14 @@ export function RuntimeProvider({
       if (!streamAccumulators.has(convId)) {
         if (isActiveConv) {
           const { tree: curTree, headId: curHead } = streamHandlerRef.current;
-          streamAccumulators.set(convId, { messages: [...curTree], headId: curHead });
+          streamAccumulators.set(convId, { messages: [...curTree], headId: curHead, lastProgressAt: Date.now() });
         } else {
-          streamAccumulators.set(convId, { messages: [], headId: null });
+          streamAccumulators.set(convId, { messages: [], headId: null, lastProgressAt: Date.now() });
         }
       }
 
       const acc = streamAccumulators.get(convId)!;
+      touchAccumulator(acc);
 
       if (e.type === 'tool-call' || e.type === 'tool-result' || e.type === 'tool-compaction') {
         logRuntimeToolDebug('stream-event', {
@@ -1602,6 +1646,7 @@ export function RuntimeProvider({
           }
         }
       } else if (e.type === 'error') {
+        applyError(acc, e.error ?? 'Unknown error');
         finalizeAssistantResponse(acc);
         if (persistTimerRef.current) { clearTimeout(persistTimerRef.current); persistTimerRef.current = null; }
         streamAccumulators.delete(convId);
@@ -1661,6 +1706,51 @@ export function RuntimeProvider({
     });
     return unsubscribe;
   }, [bumpSubAgentVersion]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+
+      for (const [convId, acc] of streamAccumulators.entries()) {
+        const lastProgressAt = acc.lastProgressAt ?? now;
+        if (now - lastProgressAt < STALE_STREAM_MS) continue;
+
+        applyError(acc, 'Stream stopped without a completion event.');
+        finalizeAssistantResponse(acc);
+        streamAccumulators.delete(convId);
+
+        const isActiveConv = convId === activeIdRef.current;
+        persistConversation(convId, acc.messages, acc.headId, {
+          runStatus: 'idle',
+          lastAssistantUpdateAt: nowIso(),
+          hasUnread: !isActiveConv,
+        });
+
+        if (isActiveConv) {
+          setIsRunning(false);
+          setTree([...acc.messages]);
+          setHeadId(acc.headId);
+        }
+      }
+
+      void (async () => {
+        const conversations = await app.conversations.list() as ConversationRecord[];
+        const staleBefore = Date.now() - STALE_STREAM_MS;
+        for (const conv of conversations) {
+          if (conv.runStatus !== 'running' || streamAccumulators.has(conv.id)) continue;
+          const lastActivity = Date.parse(conv.lastAssistantUpdateAt ?? conv.updatedAt);
+          if (Number.isNaN(lastActivity) || lastActivity > staleBefore) continue;
+          const { tree: persistedTree, headId: persistedHead } = ensureTree(conv);
+          await persistConversation(conv.id, persistedTree, persistedHead, { runStatus: 'idle' });
+          if (conv.id === activeIdRef.current) setIsRunning(false);
+        }
+      })().catch((err) => {
+        console.error('[Runtime] Failed stale stream recovery:', err);
+      });
+    }, STALE_STREAM_CHECK_MS);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Listen for proactive GAIA messages and inject into the active conversation
   useEffect(() => {
@@ -1735,7 +1825,7 @@ export function RuntimeProvider({
     setHeadId(newHead);
     setIsRunning(true);
 
-    streamAccumulators.set(convId, { messages: [...newTree], headId: newHead, pendingAssistantTiming });
+    streamAccumulators.set(convId, { messages: [...newTree], headId: newHead, pendingAssistantTiming, lastProgressAt: Date.now() });
     const branch = getActiveBranch(newTree, newHead);
     await persistConversation(convId, newTree, newHead, { runStatus: 'running' });
     void maybeGenerateTitle(convId, branch);
@@ -1768,6 +1858,7 @@ export function RuntimeProvider({
       messages: newTree,
       headId: actualParent,
       pendingAssistantTiming: createPendingAssistantTiming(),
+      lastProgressAt: Date.now(),
     });
     const branch = getActiveBranch(newTree, actualParent);
     persistConversation(convId, newTree, actualParent, { runStatus: 'running' });

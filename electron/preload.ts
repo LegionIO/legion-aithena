@@ -156,6 +156,7 @@ const appAPI = {
     absorberResolve: (input: string) => ipcRenderer.invoke('daemon:absorber-resolve', input),
     absorberDispatch: (input: string, scope?: string) => ipcRenderer.invoke('daemon:absorber-dispatch', input, scope),
     absorberJob: (jobId: string) => ipcRenderer.invoke('daemon:absorber-job', jobId),
+    llmModels: () => ipcRenderer.invoke('daemon:llm-models'),
     health: () => ipcRenderer.invoke('daemon:health'),
     ready: () => ipcRenderer.invoke('daemon:ready'),
     metrics: () => ipcRenderer.invoke('daemon:metrics'),
@@ -263,6 +264,17 @@ const appAPI = {
   clipboard: {
     writeText: (text: string) =>
       ipcRenderer.invoke('clipboard:write-text', text) as Promise<{ ok: boolean; error?: string }>,
+  },
+
+  cliTools: {
+    list: () => ipcRenderer.invoke('cli-tools:list') as Promise<unknown[]>,
+  },
+
+  shell: {
+    openPath: (path: string) =>
+      ipcRenderer.invoke('shell:open-path', path) as Promise<{ ok: boolean; error?: string }>,
+    openExternal: (url: string) =>
+      ipcRenderer.invoke('shell:open-external', url) as Promise<{ ok: boolean; error?: string }>,
   },
 
   // Image utilities (fetched via main process to bypass CORS)

@@ -7,10 +7,70 @@ import type { StreamEvent, ReasoningEffort } from '../agent/mastra-agent.js';
 import { getAppStatus, resolveAgentBackend, streamAppAgent } from '../agent/app-runtime.js';
 import type { AppConfig } from '../config/schema.js';
 import { readEffectiveConfig } from './config.js';
-// Compaction removed — the daemon handles its own context management
+import { daemonGet } from '../lib/daemon-client.js';
 import type { ToolDefinition } from '../tools/types.js';
 import { ensureSafeToolDefinitions } from '../tools/naming.js';
 import { sendSubAgentFollowUp, stopSubAgent, getActiveSubAgentIds } from '../tools/sub-agent.js';
+
+type DaemonModelEntry = {
+  key: string;
+  displayName: string;
+  maxInputTokens?: number;
+  computerUseSupport?: string;
+  visionCapable?: boolean;
+  preferredTarget?: string;
+};
+
+type DaemonModelCatalog = {
+  models: DaemonModelEntry[];
+  defaultKey: string | null;
+};
+
+type OpenAIModelObject = { id: string; owned_by?: string };
+type ProvidersResponse = {
+  providers?: Array<{ name: string; default_model?: string }>;
+};
+
+async function fetchDaemonModels(
+  config: AppConfig,
+  appHome: string,
+): Promise<DaemonModelCatalog | null> {
+  const modelsResult = await daemonGet<OpenAIModelObject[] | { data?: OpenAIModelObject[] }>(
+    config, appHome, '/v1/models',
+  );
+
+  let modelList: OpenAIModelObject[] = [];
+  if (modelsResult.ok && modelsResult.data) {
+    const raw = modelsResult.data;
+    modelList = Array.isArray(raw)
+      ? raw
+      : Array.isArray(raw.data) ? raw.data : [];
+  }
+
+  if (modelList.length === 0) {
+    const providersResult = await daemonGet<ProvidersResponse>(config, appHome, '/api/llm/providers');
+    if (providersResult.ok && providersResult.data) {
+      const providers = providersResult.data.providers ?? [];
+      modelList = providers
+        .filter((p) => p.default_model)
+        .map((p) => ({ id: p.default_model!, owned_by: p.name }));
+    }
+  }
+
+  if (modelList.length === 0) return null;
+
+  const models: DaemonModelEntry[] = modelList.map((m) => ({
+    key: m.id,
+    displayName: m.id,
+  }));
+
+  const configDefault = config.models?.defaultModelKey;
+  const defaultKey = configDefault && models.some((m) => m.key === configDefault)
+    ? configDefault
+    : models[0]?.key ?? null;
+
+  return { models, defaultKey };
+}
 
 const activeStreams = new Map<string, { abort: () => void }>();
 const activeObserverSessions = new Map<string, string>();
@@ -141,19 +201,20 @@ export function registerAgentHandlers(ipcMain: IpcMain, appHome: string): void {
 
     if (!modelEntry || !streamConfig) {
       if (backend === 'legion-daemon') {
-        // Daemon manages its own models — create a passthrough config so the request proceeds
+        // Daemon manages its own models — create a passthrough config.
+        // Forward the user-selected model key so the daemon routes correctly.
         const fallbackModelConfig: LLMModelConfig = {
           provider: 'openai-compatible',
           endpoint: '',
           apiKey: '',
-          modelName: '',
+          modelName: modelKey ?? '',
           temperature: config.advanced.temperature,
           maxSteps: config.advanced.maxSteps,
           maxRetries: config.advanced.maxRetries,
         };
         const fallbackEntry: ModelCatalogEntry = {
-          key: '__daemon_default__',
-          displayName: 'Daemon Default',
+          key: modelKey ?? '__daemon_default__',
+          displayName: modelKey ?? 'Daemon Default',
           modelConfig: fallbackModelConfig,
         };
         modelEntry = fallbackEntry;
@@ -317,13 +378,16 @@ export function registerAgentHandlers(ipcMain: IpcMain, appHome: string): void {
     return { ids: getActiveSubAgentIds() };
   });
 
-  // Model catalog endpoint
-  ipcMain.handle('agent:model-catalog', () => {
+  // Model catalog endpoint — fetches available models from the daemon
+  ipcMain.handle('agent:model-catalog', async () => {
     try {
       const config = readEffectiveConfig(appHome);
+      const daemonModels = await fetchDaemonModels(config, appHome);
+      if (daemonModels) return daemonModels;
+
       const catalog = resolveModelCatalog(config);
       return {
-        models: catalog.entries.map((e: { key: string; displayName: string; modelConfig: { maxInputTokens?: number }; computerUseSupport?: string; visionCapable?: boolean; preferredTarget?: string }) => ({
+        models: catalog.entries.map((e) => ({
           key: e.key,
           displayName: e.displayName,
           maxInputTokens: e.modelConfig.maxInputTokens,

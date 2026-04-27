@@ -1,5 +1,89 @@
 # Changelog
 
+## [1.1.21] - 2026-04-27
+
+### Added
+- Streaming response status now samples a stable verb from a spinner verb list for each new agent turn, with a Thinking fallback if the list is empty (#46)
+
+## [1.1.20] - 2026-04-27
+
+### Fixed
+- Process execution, MCP stdio servers, and CLI tool binary checks now use a cached login-shell environment so tools installed by the user's shell profile are available from the desktop app (#48)
+
+## [1.1.19] - 2026-04-27
+
+### Added
+- Tool result rendering now classifies file, web, command, structured, and text results, summarizes detected paths, URLs, and TODOs, opens HTTP(S) URLs natively, adds per-tool icons, and can send TODO feedback back into the thread (#49)
+
+## [1.1.18] - 2026-04-27
+
+### Added
+- Tool results can now expose detected local file paths as clickable controls backed by a `shell:open-path` IPC handler that opens existing paths through the native shell (#43)
+
+## [1.1.17] - 2026-04-27
+
+### Added
+- Settings now includes a CLI Tools manager that shows built-in tools, checks binary availability, allows custom CLI tools, and enables or disables CLI tools without deleting built-in definitions (#37)
+
+## [1.1.16] - 2026-04-27
+
+### Fixed
+- Assistant response ingestion now unwraps text content blocks, including serialized `[{\"type\":\"text\",\"text\":\"...\"}]` payloads, before rendering so messages display as markdown instead of raw JSON (#28)
+
+## [1.1.15] - 2026-04-27
+
+### Fixed
+- Mission Control now labels persisted task rows as Tracked Tasks and adds a separate recent Activity card from daemon events so users can distinguish persisted jobs from live runner activity (#59)
+
+## [1.1.14] - 2026-04-27
+
+### Fixed
+- Mission Control worker health now reads daemon `lifecycle_state` before falling back to `status`, and counts paused workers as degraded instead of healthy (#54)
+
+## [1.1.13] - 2026-04-27
+
+### Fixed
+- Daemon settings GAIA card now derives mode from enabled/connected state and reads session TTL from `gaia.session.ttl` before the legacy flat fallback (#55)
+
+## [1.1.12] - 2026-04-27
+
+### Fixed
+- Chat responses now show a visible streaming/done/interrupted/error status pill and stale streams are recovered after 60 seconds without progress instead of leaving conversations marked running forever (#56)
+
+## [1.1.11] - 2026-04-27
+
+### Fixed
+- Mesh settings tab now checks loaded extensions and daemon mesh flags so it can distinguish missing `lex-mesh`, solo-node operation, and real disconnected states (#57)
+
+## [1.1.10] - 2026-04-27
+
+### Fixed
+- Skills settings tab now unwraps daemon `{ data, meta }` envelopes and guards against non-array skill responses so the panel no longer crashes on load (#58)
+
+## [1.1.9] - 2026-04-27
+
+### Fixed
+- Events settings tab now renders daemon event names from either `type` or `event` and builds useful detail text from flat event metadata when no nested `data` payload is present (#61)
+
+## [1.1.8] - 2026-04-27
+
+### Fixed
+- GAIA settings sessions card now reads `sessions_detail` before falling back to the legacy object-shaped `sessions`, so daemon responses with numeric `sessions` no longer render an empty value (#60)
+
+## [1.1.7] - 2026-04-24
+
+### Fixed
+- Manual model selection from dropdown now forwards the chosen model to the daemon; previously only static `runtime.daemon.model` overrides were sent, so selecting a different model in the UI had no effect
+- Daemon-sourced models (from `/v1/models`) now pass their model key through the passthrough config instead of sending an empty string
+- Added `mapProviderForDaemon()` to translate Interlink provider types (`amazon-bedrock`, `google`, `openai-compatible`) to daemon-side names (`bedrock`, `gemini`, auto-detect)
+
+## [1.1.6] - 2026-04-22
+
+### Changed
+- Model catalog now fetched from daemon `/v1/models` endpoint instead of requiring manual config in `~/.legionio/config.json`; discovers all models the daemon has valid credentials for at runtime
+- Falls back to `/api/llm/providers` (default model per provider) when `/v1/models` is unavailable, then to local config catalog if daemon is unreachable
+- Exposed `daemon:llm-models` IPC handler for direct `/v1/models` access from renderer
+
 ## [1.1.5] - 2026-04-21
 
 ### Fixed
