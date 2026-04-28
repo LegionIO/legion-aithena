@@ -63,6 +63,7 @@ type DaemonLlmConfig = {
   providerLayer?: {
     mode?: 'daemon_router' | 'native_offerings' | 'auto' | 'ruby_llm' | 'native';
     nativeProviders?: string[];
+    fallbackToDaemonRouter?: boolean;
     fallbackToRubyLlm?: boolean;
   };
   tierRouting?: {
@@ -236,7 +237,7 @@ const ProviderLayerSection: FC<{
   const pl = daemonLlm.providerLayer ?? {};
   const mode = normalizeRoutingMode(pl.mode);
   const nativeProviders = pl.nativeProviders ?? ['claude', 'bedrock'];
-  const fallback = pl.fallbackToRubyLlm ?? true;
+  const fallback = pl.fallbackToDaemonRouter ?? pl.fallbackToRubyLlm ?? true;
 
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [loadingProviders, setLoadingProviders] = useState(false);
@@ -294,7 +295,7 @@ const ProviderLayerSection: FC<{
       <Toggle
         label="Fall back to daemon router if a native offering fails"
         checked={fallback}
-        onChange={(v) => updateConfig('appConfig.daemonLlm.providerLayer.fallbackToRubyLlm', v)}
+        onChange={(v) => updateConfig('appConfig.daemonLlm.providerLayer.fallbackToDaemonRouter', v)}
       />
 
       <div>
