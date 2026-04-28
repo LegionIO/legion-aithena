@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.24] - 2026-04-28
+
+### Fixed
+- Daemon LLM model discovery now accepts both legacy provider responses and native inventory responses from the routing redesign, and settings now uses router/offering wording while loading older mode values.
+
 ## [1.1.23] - 2026-04-28
 
 ### Fixed
