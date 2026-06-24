@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.3.6] - 2026-06-23
+
+### Fixed
+- **Codex routing works without `legionio setup proxy-mode`** — `applyCodexConfig` now fully provisions the `[model_providers.legionio]` block in `~/.codex/config.toml` and creates the `~/.codex/legionio-catalog.json` model catalog if missing. Previously, toggling Codex routing in Interlink only set `model = "legionio"` and `model_provider = "legionio"` but relied on the CLI setup command having been run first to create the provider definition. Without it, Codex would show "Model provider `legionio` not found" and fall back to its default model.
+
 ## [2.3.5] - 2026-06-03
 
 ### Added

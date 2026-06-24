@@ -861,18 +861,30 @@ enum ClientConfigManager {
     }
 
     // MARK: - Codex (~/.codex/config.toml)
-    // `setup proxy-mode` writes legionio.config.toml + the [model_providers.legionio] block
-    // into config.toml so the provider appears in the model picker (CLI and Mac app).
-    // Interlink's toggle only sets/clears the top-level `model` and `model_provider` keys
-    // to make LegionIO the active default — it does not touch the provider block.
+    // Interlink fully provisions the LegionIO provider so `legionio setup proxy-mode`
+    // is not required. On apply we ensure: the [model_providers.legionio] block exists,
+    // the model catalog JSON exists, and the top-level model/model_provider keys are set.
 
     static var codexProfileConfigPath: String { "\(home)/.codex/legionio.config.toml" }
     private static var codexConfigPath: String { "\(home)/.codex/config.toml" }
+    private static var codexCatalogPath: String { "\(home)/.codex/legionio-catalog.json" }
+    private static var codexBaseURL: String { "http://localhost:4567/v1" }
 
     static func applyCodexConfig() {
+        let fm = FileManager.default
+        let dir = "\(home)/.codex"
+        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+
+        ensureCodexProviderBlock()
+        ensureCodexCatalog()
+
         let path = codexConfigPath
-        guard let data = FileManager.default.contents(atPath: path),
-              var toml = String(data: data, encoding: .utf8) else { return }
+        var toml: String
+        if let data = fm.contents(atPath: path), let content = String(data: data, encoding: .utf8) {
+            toml = content
+        } else {
+            toml = ""
+        }
 
         let modelLine     = "model = \"\(legionModel)\""
         let providerLine  = "model_provider = \"\(legionModel)\""
@@ -891,7 +903,61 @@ enum ClientConfigManager {
             toml = providerLine + "\n" + toml
         }
 
-        FileManager.default.createFile(atPath: path, contents: toml.data(using: .utf8))
+        fm.createFile(atPath: path, contents: toml.data(using: .utf8))
+    }
+
+    private static func ensureCodexProviderBlock() {
+        let fm = FileManager.default
+        let path = codexConfigPath
+        var toml: String
+        if let data = fm.contents(atPath: path), let content = String(data: data, encoding: .utf8) {
+            toml = content
+        } else {
+            toml = ""
+        }
+
+        if toml.range(of: #"(?m)^\[model_providers\.legionio\]"#, options: .regularExpression) != nil {
+            return
+        }
+
+        let providerBlock = """
+
+        [model_providers.legionio]
+        name = "LegionIO"
+        api_key = "legion"
+        base_url = "\(codexBaseURL)"
+        wire_api = "responses"
+        """
+
+        toml = toml.trimmingCharacters(in: .whitespacesAndNewlines) + "\n" + providerBlock + "\n"
+        fm.createFile(atPath: path, contents: toml.data(using: .utf8))
+    }
+
+    private static func ensureCodexCatalog() {
+        let fm = FileManager.default
+        let path = codexCatalogPath
+        if fm.fileExists(atPath: path) { return }
+
+        let catalog = """
+        {
+          "models": [
+            {
+              "slug": "legionio",
+              "display_name": "LegionIO",
+              "context_window": 262144,
+              "context_size": 262144
+            },
+            {
+              "slug": "auto",
+              "display_name": "LegionIO (auto)",
+              "context_window": 262144,
+              "context_size": 262144
+            }
+          ]
+        }
+        """
+
+        fm.createFile(atPath: path, contents: catalog.data(using: .utf8))
     }
 
     static func restoreCodexConfig() {
