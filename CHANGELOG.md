@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.4.1] - 2026-07-10
+
+### Added
+- **Auto-upgrade legionio CLI** — When a newer `legionio` formula is available, Interlink automatically runs `brew upgrade legionio` and restarts the daemon. Enabled by default with an "auto-upgrade cli" checkbox in the Updates tab to disable.
+
+## [2.4.0] - 2026-07-10
+
+### Added
+- **Daemon restart after gem updates** — After `legionio update` completes successfully, Interlink now runs `brew services restart legionio` so the daemon picks up the new code immediately. Enabled by default with a "restart daemon" checkbox in the Updates tab header to disable.
+
+### Changed
+- **Gem updates use `legionio update`** — Instead of per-gem `legion-gem update <name>`, clicking update for any legion-* or lex-* gem now runs a single `legionio update` which handles the full dependency graph. Only runs once regardless of how many gems are outdated.
+- **Claude Code install button** — Replaced the passive `npm i -g` hint with a proper "install" button using Homebrew (`brew install anthropics/tap/claude-code`), matching the Codex and Kai install UX.
+
+### Fixed
+- **Self-update relaunch timing** — Increased the relaunch delay from 1s to 3s after termination to ensure the old process fully exits before the new binary opens.
+
 ## [2.3.6] - 2026-06-23
 
 ### Fixed

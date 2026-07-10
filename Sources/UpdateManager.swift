@@ -31,15 +31,19 @@ class UpdateManager: ObservableObject {
     @Published var lastChecked: Date?
     @Published var checkError: String?
     @Published var autoUpdateLex = true
+    @Published var autoUpgradeLegionio = true
+    @Published var restartAfterUpdate = true
 
     private let resolvedBrewPath: String
     private let resolvedLegionGemPath: String
+    private let resolvedLegionioPath: String
     private var backgroundTimer: Timer?
     private var diskVersionTimer: Timer?
 
     private init() {
         resolvedBrewPath = Self.findPath("/opt/homebrew/bin/brew", fallback: "/usr/local/bin/brew")
         resolvedLegionGemPath = Self.findPath("/opt/homebrew/bin/legion-gem", fallback: "/usr/local/bin/legion-gem")
+        resolvedLegionioPath = Self.findPath("/opt/homebrew/bin/legionio", fallback: "/usr/local/bin/legionio")
         startBackgroundChecks()
     }
 
@@ -84,7 +88,7 @@ class UpdateManager: ObservableObject {
     // MARK: - Background Periodic Check
 
     private func startBackgroundChecks() {
-        backgroundTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+        backgroundTimer = Timer.scheduledTimer(withTimeInterval: 14400, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
                 await self.checkForUpdates(force: true, background: true)
@@ -127,7 +131,7 @@ class UpdateManager: ObservableObject {
             let bundlePath = Bundle.main.bundlePath
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", "sleep 1 && open '\(bundlePath)'"]
+            process.arguments = ["-c", "sleep 3 && open '\(bundlePath)'"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try? process.run()
@@ -182,37 +186,112 @@ class UpdateManager: ObservableObject {
         }
 
         if autoUpdateLex {
-            let lexItems = items.filter(\.isLex)
-            for item in lexItems {
-                autoUpdateGem(item)
-            }
+            autoUpdateGems()
+        }
+
+        if autoUpgradeLegionio {
+            autoUpgradeLegionioBrew()
         }
     }
 
     // MARK: - Update Actions
 
     func updateItem(_ item: UpdateItem) {
+        if item.isInterlink {
+            updateInterlink(item)
+        } else {
+            runLegionioUpdate()
+        }
+    }
+
+    func updateAll() {
+        let hasInterlink = items.contains(where: \.isInterlink)
+        let hasGems = items.contains { !$0.isInterlink && !$0.isUpdating }
+
+        if hasGems { runLegionioUpdate() }
+        if hasInterlink, let item = items.first(where: \.isInterlink) {
+            updateInterlink(item)
+        }
+    }
+
+    /// Run `legionio update` once for all outdated gems, then optionally restart the daemon.
+    @Published private(set) var isRunningLegionioUpdate = false
+
+    private func runLegionioUpdate() {
+        guard !isRunningLegionioUpdate else { return }
+        isRunningLegionioUpdate = true
+
+        let gemIds = items.filter { !$0.isInterlink }.map(\.id)
+        for i in items.indices where gemIds.contains(items[i].id) {
+            items[i].isUpdating = true
+        }
+
+        let legionio = resolvedLegionioPath
+        let shouldRestart = restartAfterUpdate
+
+        Task.detached {
+            let success = Self.runSync(legionio, arguments: ["update"])
+
+            if success && shouldRestart {
+                await ServiceManager.shared.restartService(.legionio)
+            }
+
+            await MainActor.run {
+                if success {
+                    self.items.removeAll { gemIds.contains($0.id) }
+                } else {
+                    for i in self.items.indices where gemIds.contains(self.items[i].id) {
+                        self.items[i].isUpdating = false
+                    }
+                }
+                self.isRunningLegionioUpdate = false
+            }
+        }
+    }
+
+    /// Auto-update all legion-*/lex-* gems via `legionio update`.
+    private func autoUpdateGems() {
+        let gemItems = items.filter { !$0.isInterlink && !$0.isLegionio }
+        guard !gemItems.isEmpty else { return }
+        runLegionioUpdate()
+    }
+
+    /// Auto-upgrade the legionio CLI formula via brew and restart the daemon.
+    private func autoUpgradeLegionioBrew() {
+        guard items.contains(where: \.isLegionio) else { return }
+        guard let idx = items.firstIndex(where: \.isLegionio) else { return }
+        items[idx].isUpdating = true
+
+        let brew = resolvedBrewPath
+        let shouldRestart = restartAfterUpdate
+
+        Task.detached {
+            let success = Self.runSync(brew, arguments: ["upgrade", "legionio"])
+
+            if success && shouldRestart {
+                await ServiceManager.shared.restartService(.legionio)
+            }
+
+            await MainActor.run {
+                if success {
+                    self.items.removeAll(where: \.isLegionio)
+                } else {
+                    if let idx = self.items.firstIndex(where: \.isLegionio) {
+                        self.items[idx].isUpdating = false
+                    }
+                }
+            }
+        }
+    }
+
+    private func updateInterlink(_ item: UpdateItem) {
         guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[idx].isUpdating = true
 
         let brew = resolvedBrewPath
-        let legionGem = resolvedLegionGemPath
-        let name = item.name
-        let isLegionio = item.isLegionio
-        let isInterlink = item.isInterlink
 
         Task.detached {
-            var success = false
-            if isInterlink {
-                success = Self.runSync(brew, arguments: ["upgrade", "legion-interlink"])
-            } else {
-                success = Self.runSync(legionGem, arguments: ["update", name])
-            }
-
-            // For legionio gem, also run brew upgrade to update the CLI binary
-            if success && isLegionio {
-                _ = Self.runSync(brew, arguments: ["upgrade", "legionio"])
-            }
+            let success = Self.runSync(brew, arguments: ["upgrade", "legion-interlink"])
 
             await MainActor.run {
                 if success {
@@ -224,13 +303,7 @@ class UpdateManager: ObservableObject {
                 }
             }
 
-            if success && isLegionio {
-                await ServiceManager.shared.restartService(.legionio)
-            }
-
-            // After interlink upgrade, quit — the AppDelegate or cask postflight
-            // will detect the new version and relaunch.
-            if success && isInterlink {
+            if success {
                 await Self.relaunchInterlink()
             }
         }
@@ -241,39 +314,11 @@ class UpdateManager: ObservableObject {
             let bundlePath = Bundle.main.bundlePath
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", "sleep 1 && open '\(bundlePath)'"]
+            process.arguments = ["-c", "sleep 3 && open '\(bundlePath)'"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try? process.run()
             NSApplication.shared.terminate(nil)
-        }
-    }
-
-    func updateAll() {
-        for item in items where !item.isUpdating {
-            updateItem(item)
-        }
-    }
-
-    /// Auto-update a lex-* gem silently. legion-gem keeps the old version installed.
-    private func autoUpdateGem(_ item: UpdateItem) {
-        guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
-        items[idx].isUpdating = true
-
-        let legionGem = resolvedLegionGemPath
-        let name = item.name
-
-        Task.detached {
-            let success = Self.runSync(legionGem, arguments: ["update", name])
-            await MainActor.run {
-                if success {
-                    self.items.removeAll { $0.id == item.id }
-                } else {
-                    if let idx = self.items.firstIndex(where: { $0.id == item.id }) {
-                        self.items[idx].isUpdating = false
-                    }
-                }
-            }
         }
     }
 

@@ -69,9 +69,7 @@ struct ClientsTab: View {
             fm.isExecutableFile(atPath: "/usr/local/bin/claude") ||
             fm.isExecutableFile(atPath: "\(home)/.local/bin/claude")
 
-        codexInstalled =
-            fm.fileExists(atPath: "/Applications/Codex.app") ||
-            fm.fileExists(atPath: "\(home)/Applications/Codex.app")
+        codexInstalled = fm.fileExists(atPath: "\(home)/.codex")
 
         kaiInstalled =
             fm.fileExists(atPath: "/Applications/Kai.app") ||
@@ -151,7 +149,9 @@ struct ClientsTab: View {
                         openTerminalWithCommand("claude")
                     }
                 } else {
-                    installHintText("npm i -g @anthropic-ai/claude-code")
+                    TerminalActionButton(label: "install", color: TerminalTheme.accent) {
+                        installClaudeCode()
+                    }
                 }
             }
             .padding(12)
@@ -169,7 +169,7 @@ struct ClientsTab: View {
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Codex")
+                    Text("Codex/ChatGPT")
                         .font(.system(size: 13, weight: .medium, design: .monospaced))
                         .foregroundColor(TerminalTheme.text)
 
@@ -185,7 +185,7 @@ struct ClientsTab: View {
                 if codexInstalled {
                     routingToggle(enabled: $codexRoutingEnabled, active: codexRouted)
                     TerminalActionButton(label: "open", color: TerminalTheme.green) {
-                        NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Codex.app"))
+                        openCodex()
                     }
                 } else {
                     TerminalActionButton(label: "install", color: TerminalTheme.accent) {
@@ -335,12 +335,19 @@ struct ClientsTab: View {
         }
     }
 
-    private func installHintText(_ hint: String) -> some View {
-        Text(hint)
-            .font(.system(size: 9, design: .monospaced))
-            .foregroundColor(TerminalTheme.textDim.opacity(0.5))
-            .lineLimit(1)
-            .truncationMode(.tail)
+    private func installClaudeCode() {
+        let brew = ServiceManager.shared.resolvedBrewPathPublic
+        Task.detached {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: brew)
+            process.arguments = ["install", "anthropics/tap/claude-code"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+            process.waitUntilExit()
+            let success = process.terminationStatus == 0
+            await MainActor.run { if success { claudeInstalled = true } }
+        }
     }
 
     // MARK: - Install Helpers
@@ -360,12 +367,16 @@ struct ClientsTab: View {
         }
     }
 
+    private func openCodex() {
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/ChatGPT.app"))
+    }
+
     private func installCodex() {
         let brew = ServiceManager.shared.resolvedBrewPathPublic
         Task.detached {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: brew)
-            process.arguments = ["install", "--cask", "codex"]
+            process.arguments = ["install", "codex"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try? process.run()
