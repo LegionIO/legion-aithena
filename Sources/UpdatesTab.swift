@@ -60,6 +60,13 @@ struct UpdatesTab: View {
             }
             .toggleStyle(TerminalCheckboxStyle())
 
+            Toggle(isOn: $updateManager.restartAfterUpdate) {
+                Text("restart daemon")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(TerminalTheme.textDim)
+            }
+            .toggleStyle(TerminalCheckboxStyle())
+
             if updateManager.outdatedCount > 0 {
                 updateAllButton
             }
