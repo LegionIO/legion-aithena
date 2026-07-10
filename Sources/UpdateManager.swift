@@ -34,12 +34,14 @@ class UpdateManager: ObservableObject {
 
     private let resolvedBrewPath: String
     private let resolvedLegionGemPath: String
+    private let resolvedLegionioPath: String
     private var backgroundTimer: Timer?
     private var diskVersionTimer: Timer?
 
     private init() {
         resolvedBrewPath = Self.findPath("/opt/homebrew/bin/brew", fallback: "/usr/local/bin/brew")
         resolvedLegionGemPath = Self.findPath("/opt/homebrew/bin/legion-gem", fallback: "/usr/local/bin/legion-gem")
+        resolvedLegionioPath = Self.findPath("/opt/homebrew/bin/legionio", fallback: "/usr/local/bin/legionio")
         startBackgroundChecks()
     }
 
@@ -196,9 +198,7 @@ class UpdateManager: ObservableObject {
         items[idx].isUpdating = true
 
         let brew = resolvedBrewPath
-        let legionGem = resolvedLegionGemPath
-        let name = item.name
-        let isLegionio = item.isLegionio
+        let legionio = resolvedLegionioPath
         let isInterlink = item.isInterlink
 
         Task.detached {
@@ -206,12 +206,7 @@ class UpdateManager: ObservableObject {
             if isInterlink {
                 success = Self.runSync(brew, arguments: ["upgrade", "legion-interlink"])
             } else {
-                success = Self.runSync(legionGem, arguments: ["update", name])
-            }
-
-            // For legionio gem, also run brew upgrade to update the CLI binary
-            if success && isLegionio {
-                _ = Self.runSync(brew, arguments: ["upgrade", "legionio"])
+                success = Self.runSync(legionio, arguments: ["update"])
             }
 
             await MainActor.run {
@@ -224,12 +219,6 @@ class UpdateManager: ObservableObject {
                 }
             }
 
-            if success && isLegionio {
-                await ServiceManager.shared.restartService(.legionio)
-            }
-
-            // After interlink upgrade, quit — the AppDelegate or cask postflight
-            // will detect the new version and relaunch.
             if success && isInterlink {
                 await Self.relaunchInterlink()
             }
@@ -255,16 +244,15 @@ class UpdateManager: ObservableObject {
         }
     }
 
-    /// Auto-update a lex-* gem silently. legion-gem keeps the old version installed.
+    /// Auto-update lex-* gems silently via `legionio update`.
     private func autoUpdateGem(_ item: UpdateItem) {
         guard let idx = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[idx].isUpdating = true
 
-        let legionGem = resolvedLegionGemPath
-        let name = item.name
+        let legionio = resolvedLegionioPath
 
         Task.detached {
-            let success = Self.runSync(legionGem, arguments: ["update", name])
+            let success = Self.runSync(legionio, arguments: ["update"])
             await MainActor.run {
                 if success {
                     self.items.removeAll { $0.id == item.id }

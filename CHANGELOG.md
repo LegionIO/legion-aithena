@@ -1,12 +1,13 @@
 # Changelog
 
-## [2.3.8] - 2026-07-10
+## [2.3.9] - 2026-07-10
+
+### Changed
+- **Gem updates use `legionio update`** — Instead of per-gem `legion-gem update <name>`, clicking update for any legion-* or lex-* gem now runs `legionio update` which handles the full dependency graph. Removed the separate `brew upgrade legionio` and daemon restart logic — `legionio update` does not affect the running daemon.
+- **Claude Code install button** — Replaced the passive `npm i -g` hint with a proper "install" button using Homebrew (`brew install anthropics/tap/claude-code`), matching the Codex and Kai install UX.
 
 ### Fixed
 - **Self-update relaunch timing** — Increased the relaunch delay from 1s to 3s after termination to ensure the old process fully exits before the new binary opens.
-
-### Changed
-- **Claude Code install button** — Replaced the passive `npm i -g` hint with a proper "install" button using Homebrew (`brew install anthropics/tap/claude-code`), matching the Codex and Kai install UX.
 
 ## [2.3.6] - 2026-06-23
 
