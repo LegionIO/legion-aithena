@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.4.1] - 2026-07-10
+
+### Added
+- **Auto-upgrade legionio CLI** — When a newer `legionio` formula is available, Interlink automatically runs `brew upgrade legionio` and restarts the daemon. Enabled by default with an "auto-upgrade cli" checkbox in the Updates tab to disable.
+
 ## [2.4.0] - 2026-07-10
 
 ### Added

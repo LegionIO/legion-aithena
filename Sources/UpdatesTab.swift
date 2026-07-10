@@ -54,7 +54,14 @@ struct UpdatesTab: View {
             }
 
             Toggle(isOn: $updateManager.autoUpdateLex) {
-                Text("auto-update lex")
+                Text("auto-update gems")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(TerminalTheme.textDim)
+            }
+            .toggleStyle(TerminalCheckboxStyle())
+
+            Toggle(isOn: $updateManager.autoUpgradeLegionio) {
+                Text("auto-upgrade cli")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(TerminalTheme.textDim)
             }

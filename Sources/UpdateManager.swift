@@ -31,6 +31,7 @@ class UpdateManager: ObservableObject {
     @Published var lastChecked: Date?
     @Published var checkError: String?
     @Published var autoUpdateLex = true
+    @Published var autoUpgradeLegionio = true
     @Published var restartAfterUpdate = true
 
     private let resolvedBrewPath: String
@@ -87,7 +88,7 @@ class UpdateManager: ObservableObject {
     // MARK: - Background Periodic Check
 
     private func startBackgroundChecks() {
-        backgroundTimer = Timer.scheduledTimer(withTimeInterval: 1800, repeats: true) { [weak self] _ in
+        backgroundTimer = Timer.scheduledTimer(withTimeInterval: 14400, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
                 await self.checkForUpdates(force: true, background: true)
@@ -185,7 +186,11 @@ class UpdateManager: ObservableObject {
         }
 
         if autoUpdateLex {
-            autoUpdateLexGems()
+            autoUpdateGems()
+        }
+
+        if autoUpgradeLegionio {
+            autoUpgradeLegionioBrew()
         }
     }
 
@@ -244,11 +249,39 @@ class UpdateManager: ObservableObject {
         }
     }
 
-    /// Auto-update lex-* gems silently via `legionio update`.
-    private func autoUpdateLexGems() {
-        let lexItems = items.filter(\.isLex)
-        guard !lexItems.isEmpty else { return }
+    /// Auto-update all legion-*/lex-* gems via `legionio update`.
+    private func autoUpdateGems() {
+        let gemItems = items.filter { !$0.isInterlink && !$0.isLegionio }
+        guard !gemItems.isEmpty else { return }
         runLegionioUpdate()
+    }
+
+    /// Auto-upgrade the legionio CLI formula via brew and restart the daemon.
+    private func autoUpgradeLegionioBrew() {
+        guard items.contains(where: \.isLegionio) else { return }
+        guard let idx = items.firstIndex(where: \.isLegionio) else { return }
+        items[idx].isUpdating = true
+
+        let brew = resolvedBrewPath
+        let shouldRestart = restartAfterUpdate
+
+        Task.detached {
+            let success = Self.runSync(brew, arguments: ["upgrade", "legionio"])
+
+            if success && shouldRestart {
+                await ServiceManager.shared.restartService(.legionio)
+            }
+
+            await MainActor.run {
+                if success {
+                    self.items.removeAll(where: \.isLegionio)
+                } else {
+                    if let idx = self.items.firstIndex(where: \.isLegionio) {
+                        self.items[idx].isUpdating = false
+                    }
+                }
+            }
+        }
     }
 
     private func updateInterlink(_ item: UpdateItem) {
