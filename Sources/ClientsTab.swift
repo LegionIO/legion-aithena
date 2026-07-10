@@ -151,7 +151,9 @@ struct ClientsTab: View {
                         openTerminalWithCommand("claude")
                     }
                 } else {
-                    installHintText("npm i -g @anthropic-ai/claude-code")
+                    TerminalActionButton(label: "install", color: TerminalTheme.accent) {
+                        installClaudeCode()
+                    }
                 }
             }
             .padding(12)
@@ -335,12 +337,19 @@ struct ClientsTab: View {
         }
     }
 
-    private func installHintText(_ hint: String) -> some View {
-        Text(hint)
-            .font(.system(size: 9, design: .monospaced))
-            .foregroundColor(TerminalTheme.textDim.opacity(0.5))
-            .lineLimit(1)
-            .truncationMode(.tail)
+    private func installClaudeCode() {
+        let brew = ServiceManager.shared.resolvedBrewPathPublic
+        Task.detached {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: brew)
+            process.arguments = ["install", "anthropics/tap/claude-code"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+            process.waitUntilExit()
+            let success = process.terminationStatus == 0
+            await MainActor.run { if success { claudeInstalled = true } }
+        }
     }
 
     // MARK: - Install Helpers

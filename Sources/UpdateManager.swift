@@ -127,7 +127,7 @@ class UpdateManager: ObservableObject {
             let bundlePath = Bundle.main.bundlePath
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", "sleep 1 && open '\(bundlePath)'"]
+            process.arguments = ["-c", "sleep 3 && open '\(bundlePath)'"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try? process.run()
@@ -241,7 +241,7 @@ class UpdateManager: ObservableObject {
             let bundlePath = Bundle.main.bundlePath
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
-            process.arguments = ["-c", "sleep 1 && open '\(bundlePath)'"]
+            process.arguments = ["-c", "sleep 3 && open '\(bundlePath)'"]
             process.standardOutput = FileHandle.nullDevice
             process.standardError = FileHandle.nullDevice
             try? process.run()
