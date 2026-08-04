@@ -47,13 +47,18 @@ struct CachedIdentityProvider: Identifiable {
 }
 
 struct CachedLLMProvider: Identifiable {
-    let id: String          // "provider:instance"
     let provider: String
     let instance: String
     let tier: String
     let capabilities: [String]
-    let circuitState: String
+    let circuitState: ProviderCircuitState
     let credentialFingerprint: String?
+
+    var key: ProviderInstanceKey {
+        ProviderInstanceKey(provider: provider, instance: instance)
+    }
+
+    var id: String { key.rawValue }
 }
 
 struct CachedLLMModel: Identifiable {
@@ -355,20 +360,19 @@ final class DaemonCache: ObservableObject {
         llmProvidersLoading = false
     }
 
-    private static func parseLLMProvider(_ dict: [String: Any]) -> CachedLLMProvider? {
+    static func parseLLMProvider(_ dict: [String: Any]) -> CachedLLMProvider? {
         guard let provider = dict["provider"] as? String,
               let instance = dict["instance"] as? String else { return nil }
         let tier = dict["tier"] as? String ?? "—"
         let capabilities = dict["capabilities"] as? [String] ?? []
-        let circuitState = (dict["health"] as? [String: Any])?["circuit_state"] as? String ?? "—"
+        let rawCircuitState = (dict["health"] as? [String: Any])?["circuit_state"] as? String
         let fingerprint = dict["credential_fingerprint"] as? String
         return CachedLLMProvider(
-            id: "\(provider):\(instance)",
             provider: provider,
             instance: instance,
             tier: tier,
             capabilities: capabilities,
-            circuitState: circuitState,
+            circuitState: ProviderCircuitState(rawValue: rawCircuitState),
             credentialFingerprint: fingerprint
         )
     }
