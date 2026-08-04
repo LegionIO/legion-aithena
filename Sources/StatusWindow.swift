@@ -268,7 +268,7 @@ struct StatusWindowView: View {
                 case Self.tabLogs:       LogsTab()
                 case Self.tabIdentity:   IdentityTab()
                 case Self.tabLLM:        LLMSettingsTab()
-                case Self.tabProviders:  LLMProvidersTab()
+                case Self.tabProviders:  LLMProvidersSection()
                 case Self.tabGaia:       GaiaTab()
                 case Self.tabMCP:        MCPTab()
                 case Self.tabExtensions: ExtensionsTab()
@@ -986,4 +986,3 @@ struct LogsTab: View {
 
 // NOTE: Tab views (ExtensionsTab, WorkersTab, DaemonSettingsTab)
 // are defined in their own dedicated files.
-

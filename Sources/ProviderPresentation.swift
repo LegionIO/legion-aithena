@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 
 struct ProviderInstanceKey: Hashable, Identifiable {
     let provider: String
@@ -57,15 +56,5 @@ enum ProviderCircuitState: Equatable {
         case .unknown:
             return "unknown"
         }
-    }
-
-    static func == (lhs: ProviderCircuitState, rhs: String) -> Bool {
-        lhs.label == rhs
-    }
-}
-
-extension Text {
-    init(_ circuitState: ProviderCircuitState) {
-        self.init(circuitState.label)
     }
 }
