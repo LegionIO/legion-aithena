@@ -168,7 +168,7 @@ struct IdentityTab: View {
 struct LLMProvidersTab: View {
     @StateObject private var cache = DaemonCache.shared
     @State private var searchText = ""
-    @State private var expandedProviders: Set<String> = []
+    @State private var expandedProviders: Set<ProviderInstanceKey> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -177,7 +177,7 @@ struct LLMProvidersTab: View {
             if cache.llmProvidersLoading && !cache.llmProvidersLoaded {
                 LLMTabHelpers.loadingView
             } else if let error = cache.llmProvidersError {
-                LLMTabHelpers.errorView(error) { Task { await cache.loadLLMProviders(force: true) } }
+                LLMTabHelpers.errorView(error) { Task { await refreshProviders() } }
             } else if filteredProviders.isEmpty {
                 LLMTabHelpers.emptyView(icon: "cpu",
                                         message: "No providers found",
@@ -188,8 +188,8 @@ struct LLMProvidersTab: View {
                         ForEach(filteredProviders) { provider in
                             ProviderAccordionCard(
                                 provider: provider,
-                                isExpanded: expandedProviders.contains(provider.id),
-                                onToggle: { toggleExpanded(provider.id) }
+                                isExpanded: expandedProviders.contains(provider.key),
+                                onToggle: { toggleExpanded(provider.key) }
                             )
                         }
                     }
@@ -223,10 +223,7 @@ struct LLMProvidersTab: View {
             TerminalSearchBox(text: $searchText)
 
             LLMTabHelpers.refreshButton {
-                Task {
-                    await cache.loadLLMProviders(force: true)
-                    cache.clearProviderModels()
-                }
+                Task { await refreshProviders() }
             }
         }
         .padding(.horizontal, 16)
@@ -246,12 +243,19 @@ struct LLMProvidersTab: View {
         }
     }
 
-    private func toggleExpanded(_ id: String) {
+    private func refreshProviders() async {
+        await cache.loadLLMProviders(force: true)
+        guard !cache.llmProvidersLoading, cache.llmProvidersError == nil else { return }
+        expandedProviders.removeAll()
+        cache.clearProviderModels()
+    }
+
+    private func toggleExpanded(_ key: ProviderInstanceKey) {
         withAnimation(.easeInOut(duration: 0.2)) {
-            if expandedProviders.contains(id) {
-                expandedProviders.remove(id)
+            if expandedProviders.contains(key) {
+                expandedProviders.remove(key)
             } else {
-                expandedProviders.insert(id)
+                expandedProviders.insert(key)
             }
         }
     }
@@ -270,10 +274,13 @@ private struct ProviderAccordionCard: View {
     private var stateColor: Color { stateOk ? TerminalTheme.green : TerminalTheme.red }
 
     private var models: [CachedLLMModel] {
-        cache.providerModels[provider.provider] ?? []
+        cache.providerModels[provider.key] ?? []
     }
     private var modelsLoading: Bool {
-        cache.providerModelsLoading[provider.provider] ?? false
+        cache.providerModelsLoading.contains(provider.key)
+    }
+    private var modelsError: String? {
+        cache.providerModelsErrors[provider.key]
     }
 
     var body: some View {
@@ -286,8 +293,8 @@ private struct ProviderAccordionCard: View {
             }
         }
         .onChange(of: isExpanded) { expanded in
-            if expanded && cache.providerModels[provider.provider] == nil {
-                Task { await cache.loadProviderModels(provider.provider) }
+            if expanded && cache.providerModels[provider.key] == nil {
+                Task { await cache.loadProviderModels(for: provider.key) }
             }
         }
     }
@@ -363,6 +370,20 @@ private struct ProviderAccordionCard: View {
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(TerminalTheme.textDim)
                     Spacer()
+                }
+                .padding(.vertical, 10)
+            } else if let modelsError {
+                HStack(spacing: 8) {
+                    Text(modelsError)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(TerminalTheme.textDim)
+                    Button("Retry") {
+                        Task { await cache.loadProviderModels(for: provider.key) }
+                    }
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(TerminalTheme.accent)
+                    .buttonStyle(.plain)
+                    .pointerCursor()
                 }
                 .padding(.vertical, 10)
             } else if models.isEmpty {

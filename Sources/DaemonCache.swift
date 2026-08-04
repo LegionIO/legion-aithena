@@ -130,8 +130,10 @@ final class DaemonCache: ObservableObject {
     @Published var llmModelsError: String?
 
     // Per-provider models (accordion)
-    @Published var providerModels: [String: [CachedLLMModel]] = [:]
-    @Published var providerModelsLoading: [String: Bool] = [:]
+    @Published var providerModels: [ProviderInstanceKey: [CachedLLMModel]] = [:]
+    @Published var providerModelsLoading: Set<ProviderInstanceKey> = []
+    @Published var providerModelsErrors: [ProviderInstanceKey: String] = [:]
+    private var providerModelsGeneration = 0
 
     private static let settingsDir: String = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -348,13 +350,19 @@ final class DaemonCache: ObservableObject {
 
         let result = await DaemonAPI.get("/api/llm/providers")
 
-        if result.ok, let dict = result.data as? [String: Any],
+        if result.ok,
+           let dict = result.data as? [String: Any],
            let items = dict["providers"] as? [[String: Any]] {
-            llmProviders = items.compactMap { Self.parseLLMProvider($0) }
+            let providers = items.compactMap { Self.parseLLMProvider($0) }
+            if providers.count == items.count {
+                llmProviders = providers
+            } else {
+                llmProvidersError = "LLM providers response was malformed."
+            }
         } else if !result.ok {
             llmProvidersError = "Failed to load LLM providers — is the daemon running?"
         } else {
-            llmProviders = []
+            llmProvidersError = "LLM providers response was malformed."
         }
         llmProvidersLoaded = true
         llmProvidersLoading = false
@@ -421,24 +429,39 @@ final class DaemonCache: ObservableObject {
 
     // MARK: - Per-Provider Models (Accordion)
 
-    func loadProviderModels(_ providerName: String) async {
-        guard providerModelsLoading[providerName] != true else { return }
-        providerModelsLoading[providerName] = true
+    func loadProviderModels(for key: ProviderInstanceKey) async {
+        guard !providerModelsLoading.contains(key) else { return }
+        let generation = providerModelsGeneration
+        providerModelsLoading.insert(key)
+        providerModelsErrors[key] = nil
 
-        let result = await DaemonAPI.get("/api/llm/providers/\(providerName)/models")
+        let result = await DaemonAPI.get(key.modelsPath, query: key.modelsQuery)
 
-        if result.ok, let dict = result.data as? [String: Any],
+        guard generation == providerModelsGeneration else { return }
+
+        if result.ok,
+           let dict = result.data as? [String: Any],
            let items = dict["models"] as? [[String: Any]] {
-            providerModels[providerName] = items.compactMap { Self.parseLLMModel($0) }
+            let models = items.compactMap { Self.parseLLMModel($0) }
+            if models.count == items.count {
+                providerModels[key] = models
+                providerModelsErrors[key] = nil
+            } else {
+                providerModelsErrors[key] = "Provider models response was malformed."
+            }
+        } else if result.ok {
+            providerModelsErrors[key] = "Provider models response was malformed."
         } else {
-            providerModels[providerName] = []
+            providerModelsErrors[key] = "Failed to load provider models — is the daemon running?"
         }
-        providerModelsLoading[providerName] = false
+        providerModelsLoading.remove(key)
     }
 
     func clearProviderModels() {
+        providerModelsGeneration += 1
         providerModels = [:]
-        providerModelsLoading = [:]
+        providerModelsLoading = []
+        providerModelsErrors = [:]
     }
 
     // MARK: - JSON Flattening (Settings)
