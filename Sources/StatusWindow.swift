@@ -264,7 +264,7 @@ struct StatusWindowView: View {
             Group {
                 switch selectedTab {
                 case Self.tabServices:   ServicesTab()
-                case Self.tabClients:    ClientsTab()
+                case Self.tabClients:    RoutingTab()
                 case Self.tabLogs:       LogsTab()
                 case Self.tabIdentity:   IdentityTab()
                 case Self.tabLLM:        LLMSettingsTab()
