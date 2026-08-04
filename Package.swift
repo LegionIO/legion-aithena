@@ -11,6 +11,11 @@ let package = Package(
             resources: [
                 .copy("Resources")
             ]
+        ),
+        .testTarget(
+            name: "LegionInterlinkTests",
+            dependencies: ["LegionInterlink"],
+            path: "Tests/LegionInterlinkTests"
         )
     ]
 )
