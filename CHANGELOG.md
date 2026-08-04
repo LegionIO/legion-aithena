@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.5.0] - 2026-08-04
+
+### Added
+- **Persistent dashboard sidebar** - Replaces the overflowing horizontal tab bar so every destination remains visible at the default window size, with an available-update count badge.
+- **Combined Routing page** - Places client routing controls and LLM provider-instance status in one scrollable workflow.
+
+### Changed
+- **Instance-scoped provider models** - Provider model expansion now queries and caches each provider instance independently while preserving the existing compact provider cards.
+- **Provider circuit presentation** - Closed, half-open, open, and unknown instance circuits render distinct green, yellow, red, and gray states. Model rows no longer imply model health.
+
+### Fixed
+- **Extension versions** - Running extension cards use the newest installed gem version when the daemon catalog omits it, and no longer render v-.
+- **Provider model errors** - Failed model requests are distinct from valid empty model lists and can be retried per instance.
+
 ## [2.4.1] - 2026-07-10
 
 ### Added
