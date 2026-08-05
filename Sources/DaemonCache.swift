@@ -368,7 +368,7 @@ final class DaemonCache: ObservableObject {
         llmProvidersLoading = false
     }
 
-    static func parseLLMProvider(_ dict: [String: Any]) -> CachedLLMProvider? {
+    nonisolated static func parseLLMProvider(_ dict: [String: Any]) -> CachedLLMProvider? {
         guard let provider = dict["provider"] as? String,
               let instance = dict["instance"] as? String else { return nil }
         let tier = dict["tier"] as? String ?? "—"
