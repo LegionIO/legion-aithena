@@ -13,6 +13,7 @@
 ### Fixed
 - **Extension versions** - Running extension cards use the newest installed gem version when the daemon catalog omits it, and no longer render v-.
 - **Provider model errors** - Failed model requests are distinct from valid empty model lists and can be retried per instance.
+- **Update automation controls** - Gem updates, CLI upgrades, and daemon restarts now persist their checkbox settings and run through one ordered update cycle with at most one daemon restart.
 
 ## [2.4.1] - 2026-07-10
 

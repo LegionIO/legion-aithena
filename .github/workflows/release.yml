@@ -19,6 +19,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build (debug)
         run: swift build
+      - name: Test
+        run: swift test
 
   version-check:
     name: Version Bump Check

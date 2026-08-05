@@ -54,6 +54,8 @@ A native window with eleven persistent sidebar destinations:
 | Updates     | Gem version checker with auto-update for lex-* extensions |
 | Settings    | Daemon settings browser (read from `~/.legionio/settings/`) |
 
+The Updates destination persists the **auto-update gems**, **auto-upgrade cli**, and **restart daemon** controls. Automatic CLI and gem work runs in order and restarts the daemon once after successful updates when enabled.
+
 ### Client Routing
 
 The Routing destination lets you route Claude Code, Codex, and Kai through the LegionIO daemon with a single click:

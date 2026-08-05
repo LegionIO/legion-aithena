@@ -36,7 +36,7 @@ struct UpdatesTab: View {
                 .foregroundColor(TerminalTheme.textDim)
 
             if updateManager.outdatedCount > 0 {
-                Text("(updateManager.outdatedCount)")
+                Text("\(updateManager.outdatedCount)")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundColor(TerminalTheme.yellow)
                     .padding(.horizontal, 6)
@@ -53,7 +53,7 @@ struct UpdatesTab: View {
                     .scaleEffect(0.7)
             }
 
-            Toggle(isOn: $updateManager.autoUpdateLex) {
+            Toggle(isOn: $updateManager.autoUpdateGems) {
                 Text("auto-update gems")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(TerminalTheme.textDim)
@@ -219,7 +219,7 @@ struct UpdatesTab: View {
                 Spacer()
 
                 if item.isLegionio {
-                    Text("cli + gem")
+                    Text("cli")
                         .font(.system(size: 8, design: .monospaced))
                         .foregroundColor(TerminalTheme.textDim)
                         .padding(.horizontal, 5)
@@ -260,6 +260,8 @@ struct UpdatesTab: View {
                     }
                     .buttonStyle(.plain)
                     .pointerCursor()
+                    .disabled(updateManager.anyUpdating)
+                    .opacity(updateManager.anyUpdating ? 0.5 : 1)
                 }
             }
             .padding(12)
@@ -278,7 +280,7 @@ struct UpdatesTab: View {
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundColor(TerminalTheme.text)
             if let lastChecked = updateManager.lastChecked {
-                Text("Checked (lastChecked, style: .relative) ago")
+                Text("Checked \(lastChecked, style: .relative) ago")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(TerminalTheme.textDim.opacity(0.5))
             }

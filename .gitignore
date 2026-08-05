@@ -6,3 +6,5 @@ dist/
 *.key
 doc/
 *.log
+Gemfile.lock
+*.gem
