@@ -236,26 +236,35 @@ class ServiceManager: ObservableObject {
     }
 
     func restartService(_ service: ServiceName) {
+        Task { await restartServiceAndWait(service) }
+    }
+
+    func restartServiceAndWait(_ service: ServiceName) async -> Bool {
         updateServiceStatus(service, .stopping)
         userInitiatedTransitions.insert(service)
         suppressPolling = true
         let brew = resolvedBrewPath
         let name = service.brewName
         let healthURL = daemonHealthURL
-        Task.detached {
-            Self.runProcess(brew, arguments: ["services", "restart", name])
-            await Self.waitForServiceReady(service: service, brew: brew, target: true, timeout: 60)
+        let succeeded = await Task.detached {
+            guard Self.runProcess(brew, arguments: ["services", "restart", name]) else { return false }
+            guard await Self.waitForServiceReady(
+                service: service,
+                brew: brew,
+                target: true,
+                timeout: 60
+            ) else { return false }
             // For legionio, also wait for the HTTP health endpoint to confirm ready
             if service == .legionio {
-                await Self.waitForDaemonReady(url: healthURL, timeout: 120)
+                return await Self.waitForDaemonReady(url: healthURL, timeout: 120)
             }
-            await MainActor.run {
-                self.userInitiatedTransitions.remove(service)
-                self.updateServiceStatus(service, .running)
-                self.suppressPolling = false
-                self.recalculateOverallStatus()
-            }
-        }
+            return true
+        }.value
+        userInitiatedTransitions.remove(service)
+        updateServiceStatus(service, succeeded ? .running : .unknown)
+        suppressPolling = false
+        recalculateOverallStatus()
+        return succeeded
     }
 
     // MARK: - Health Checks
@@ -460,7 +469,12 @@ class ServiceManager: ObservableObject {
     // MARK: - Static helpers (run off main thread)
 
     /// Run a command synchronously. Call from Task.detached only.
-    private nonisolated static func runProcess(_ executable: String, arguments: [String], workingDirectory: String? = nil) {
+    @discardableResult
+    private nonisolated static func runProcess(
+        _ executable: String,
+        arguments: [String],
+        workingDirectory: String? = nil
+    ) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
@@ -470,15 +484,21 @@ class ServiceManager: ObservableObject {
         }
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        try? process.run()
-        process.waitUntilExit()
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     /// Poll a service until it reaches the target state (running or stopped), up to `timeout` seconds.
     /// Checks every second using `brew services info`.
+    @discardableResult
     private nonisolated static func waitForServiceReady(
         service: ServiceName, brew: String, target: Bool, timeout: Int
-    ) async {
+    ) async -> Bool {
         let interval: UInt64 = 1_000_000_000  // 1 second
         let maxAttempts = timeout
 
@@ -487,21 +507,24 @@ class ServiceManager: ObservableObject {
 
             let result = await checkBrewService(brew: brew, name: service.brewName)
             if result.running == target {
-                return
+                return true
             }
         }
+        return false
     }
 
     /// Poll the daemon HTTP health endpoint until it reports `ready: true`, up to `timeout` seconds.
-    private nonisolated static func waitForDaemonReady(url: URL, timeout: Int) async {
+    @discardableResult
+    private nonisolated static func waitForDaemonReady(url: URL, timeout: Int) async -> Bool {
         let interval: UInt64 = 1_000_000_000  // 1 second
         for _ in 0..<timeout {
             try? await Task.sleep(nanoseconds: interval)
             let result = await checkDaemonHealth(url: url)
             if result.responding {
-                return
+                return true
             }
         }
+        return false
     }
 
     /// Kill processes listening on a given port. Fallback for when brew services stop leaves a lingering process.

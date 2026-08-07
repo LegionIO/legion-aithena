@@ -219,8 +219,8 @@ struct PulsingDot: View {
 
 struct StatusWindowView: View {
     @EnvironmentObject var manager: ServiceManager
-    @State private var selectedTab = 0
-    @State private var hasAppeared = false
+    @StateObject private var updateManager = UpdateManager.shared
+    @State private var selectedDestination: DashboardDestination = .defaultDestination
 
     /// Fallback version string read from the VERSION file at compile time.
     /// The .app bundle will override this via CFBundleShortVersionString.
@@ -239,59 +239,43 @@ struct StatusWindowView: View {
         return "2.2.1"
     }()
 
-    private static let tabClients = 0
-    private static let tabServices = 1
-    private static let tabLogs = 2
-    private static let tabIdentity = 3
-    private static let tabLLM = 4
-    private static let tabProviders = 5
-    private static let tabGaia = 6
-    private static let tabMCP = 7
-    private static let tabExtensions = 8
-    private static let tabWorkers = 9
-    private static let tabUpdates = 10
-    private static let tabSettings = 11
-
     var body: some View {
         VStack(spacing: 0) {
             // Title bar area
             titleBar
 
-            // Tab bar
-            tabBar
+            HStack(spacing: 0) {
+                sidebar
 
-            // Tab content
-            Group {
-                switch selectedTab {
-                case Self.tabServices:   ServicesTab()
-                case Self.tabClients:    ClientsTab()
-                case Self.tabLogs:       LogsTab()
-                case Self.tabIdentity:   IdentityTab()
-                case Self.tabLLM:        LLMSettingsTab()
-                case Self.tabProviders:  LLMProvidersTab()
-                case Self.tabGaia:       GaiaTab()
-                case Self.tabMCP:        MCPTab()
-                case Self.tabExtensions: ExtensionsTab()
-                case Self.tabWorkers:    WorkersTab()
-                case Self.tabUpdates:    UpdatesTab()
-                case Self.tabSettings:   DaemonSettingsTab()
-                default:                 ServicesTab()
+                Rectangle()
+                    .fill(TerminalTheme.border)
+                    .frame(width: 1)
+
+                Group {
+                    switch selectedDestination {
+                    case .routing:    RoutingTab()
+                    case .services:   ServicesTab()
+                    case .logs:       LogsTab()
+                    case .identity:   IdentityTab()
+                    case .llm:        LLMSettingsTab()
+                    case .gaia:       GaiaTab()
+                    case .mcp:        MCPTab()
+                    case .extensions: ExtensionsTab()
+                    case .workers:    WorkersTab()
+                    case .updates:    UpdatesTab()
+                    case .settings:   DaemonSettingsTab()
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+                .id(selectedDestination)
+                .animation(.easeInOut(duration: 0.15), value: selectedDestination)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .transition(.opacity)
-            .id(selectedTab)
-            .animation(.easeInOut(duration: 0.15), value: selectedTab)
         }
         .background(TerminalTheme.bg)
         .frame(minWidth: 700, minHeight: 520)
         .preferredColorScheme(.dark)
-        .onAppear {
-            if !hasAppeared {
-                hasAppeared = true
-                selectedTab = Self.tabClients
-            }
-        }
+        .task { await updateManager.checkForUpdates() }
     }
 
     // MARK: - Grid Icon (matches menu bar icon)
@@ -406,54 +390,64 @@ struct StatusWindowView: View {
         return BreathingStatusPill(color: color, text: manager.overallStatus.displayText, isOnline: manager.overallStatus == .online)
     }
 
-    // MARK: - Tab Bar
+    // MARK: - Sidebar
 
-    private var tabBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 0) {
-                tabButton(title: "Clients",    icon: "person.2.circle",       index: Self.tabClients)
-                tabButton(title: "Services",   icon: "server.rack",           index: Self.tabServices)
-                tabButton(title: "Logs",       icon: "terminal",              index: Self.tabLogs)
-                tabButton(title: "Identity",   icon: "person.badge.key",      index: Self.tabIdentity)
-                tabButton(title: "LLM",        icon: "brain",                 index: Self.tabLLM)
-                tabButton(title: "Providers",  icon: "cpu",                   index: Self.tabProviders)
-                tabButton(title: "GAIA",       icon: "bubble.left.and.bubble.right", index: Self.tabGaia)
-                tabButton(title: "MCP",        icon: "link.circle",           index: Self.tabMCP)
-                tabButton(title: "Extensions", icon: "puzzlepiece.extension", index: Self.tabExtensions)
-                tabButton(title: "Workers",    icon: "gearshape.2",           index: Self.tabWorkers)
-                tabButton(title: "Updates",    icon: "arrow.triangle.2.circlepath", index: Self.tabUpdates)
-                tabButton(title: "Settings",   icon: "gearshape",             index: Self.tabSettings)
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            ForEach(DashboardDestination.allCases) { destination in
+                sidebarButton(destination)
             }
-            .padding(.horizontal, 8)
+
+            Spacer(minLength: 0)
         }
+        .frame(width: 168)
+        .frame(maxHeight: .infinity)
         .background(TerminalTheme.bg)
-        .overlay(
-            Rectangle()
-                .fill(TerminalTheme.border)
-                .frame(height: 1),
-            alignment: .bottom
-        )
     }
 
-    private func tabButton(title: String, icon: String, index: Int) -> some View {
-        let isSelected = selectedTab == index
-        return Button(action: { withAnimation(.easeInOut(duration: 0.15)) { selectedTab = index } }) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
+    private func sidebarButton(_ destination: DashboardDestination) -> some View {
+        let isSelected = selectedDestination == destination
+        let badgeCount = destination == .updates
+            ? UpdateBadgeState.visibleCount(
+                hasChecked: updateManager.hasChecked,
+                outdatedCount: updateManager.outdatedCount
+            )
+            : nil
+
+        return Button {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                selectedDestination = destination
+            }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: destination.icon)
                     .font(.system(size: 11))
-                Text(title)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular, design: .monospaced))
+                    .frame(width: 14)
+
+                Text(destination.title)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular, design: .monospaced))
+
+                Spacer(minLength: 4)
+
+                if let badgeCount {
+                    Text("\(badgeCount)")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(TerminalTheme.bg)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(TerminalTheme.accent)
+                        .cornerRadius(3)
+                }
             }
             .foregroundColor(isSelected ? TerminalTheme.accent : TerminalTheme.textDim)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 35, maxHeight: 35, alignment: .leading)
             .contentShape(Rectangle())
             .background(isSelected ? TerminalTheme.surfaceBg : Color.clear)
             .overlay(
                 Rectangle()
                     .fill(isSelected ? TerminalTheme.accent : Color.clear)
-                    .frame(height: 2),
-                alignment: .bottom
+                    .frame(width: 2),
+                alignment: .leading
             )
         }
         .buttonStyle(.plain)
@@ -986,4 +980,3 @@ struct LogsTab: View {
 
 // NOTE: Tab views (ExtensionsTab, WorkersTab, DaemonSettingsTab)
 // are defined in their own dedicated files.
-

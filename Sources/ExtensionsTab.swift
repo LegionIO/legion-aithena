@@ -40,6 +40,10 @@ private func isCoreGem(_ name: String) -> Bool {
     coreGemPrefixes.contains { name.hasPrefix($0) }
 }
 
+extension InstalledGem {
+    var isCoreDepedency: Bool { isCoreGem(name) }
+}
+
 private let catalogExtensions: [CatalogExtension] = [
     CatalogExtension(id: "lex-exec", name: "lex-exec", category: .extensions),
     CatalogExtension(id: "lex-knowledge", name: "lex-knowledge", category: .extensions),
@@ -76,16 +80,6 @@ private let setupPacks: [SetupPack] = [
     SetupPack(id: "python", command: "python", description: "Legion Python environment (venv + document/data packages)"),
     SetupPack(id: "vscode", command: "vscode", description: "Legion MCP server config for VS Code"),
 ]
-
-// MARK: - Installed Gem Info
-
-struct InstalledGem: Identifiable {
-    let id: String
-    let name: String
-    let version: String
-
-    var isCoreDepedency: Bool { isCoreGem(name) }
-}
 
 // MARK: - Extensions Tab
 
@@ -363,6 +357,8 @@ struct ExtensionsTab: View {
 
     private func loadedExtensionCard(_ ext: CachedExtension) -> some View {
         let color = ext.isReady ? TerminalTheme.green : TerminalTheme.gray
+        let installedVersion = installedGems.first { $0.name == ext.name }?.version
+        let version = InstalledGemParser.resolveVersion(reported: ext.version, installed: installedVersion)
         return HoverCard {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 10) {
@@ -381,9 +377,11 @@ struct ExtensionsTab: View {
                                 .font(.system(size: 9, design: .monospaced))
                                 .foregroundColor(TerminalTheme.textDim)
 
-                            Text("v\(ext.version)")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(TerminalTheme.accent.opacity(0.7))
+                            if let version {
+                                Text("v\(version)")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(TerminalTheme.accent.opacity(0.7))
+                            }
                         }
                     }
 
@@ -688,16 +686,7 @@ struct ExtensionsTab: View {
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 let output = String(data: data, encoding: .utf8) ?? ""
 
-                return output.components(separatedBy: "\n").compactMap { line -> InstalledGem? in
-                    let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    guard trimmed.hasPrefix("lex-") else { return nil }
-                    // Format: "lex-name (1.2.3)"
-                    let parts = trimmed.components(separatedBy: " (")
-                    guard parts.count == 2 else { return nil }
-                    let name = parts[0]
-                    let version = parts[1].replacingOccurrences(of: ")", with: "")
-                    return InstalledGem(id: name, name: name, version: version)
-                }
+                return InstalledGemParser.parse(output)
             } catch {
                 return []
             }

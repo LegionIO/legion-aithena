@@ -1,9 +1,9 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Clients Tab
+// MARK: - Client Routing Section
 
-struct ClientsTab: View {
+struct ClientRoutingSection: View {
     @EnvironmentObject var manager: ServiceManager
 
     // Per-client routing toggle — persisted to ~/.legionio/settings/interlink.json
@@ -24,14 +24,12 @@ struct ClientsTab: View {
         VStack(spacing: 0) {
             clientsHeader
 
-            ScrollView {
-                VStack(spacing: 12) {
-                    claudeCodeCard
-                    codexCard
-                    kaiClientCard
-                }
-                .padding(16)
+            VStack(spacing: 12) {
+                claudeCodeCard
+                codexCard
+                kaiClientCard
             }
+            .padding(16)
         }
         .background(TerminalTheme.bg)
         .task { detectClients(); loadRoutingState() }

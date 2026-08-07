@@ -163,12 +163,12 @@ struct IdentityTab: View {
     }
 }
 
-// MARK: - LLM Providers Tab (Accordion Providers → Models)
+// MARK: - LLM Providers Section (Accordion Providers → Models)
 
-struct LLMProvidersTab: View {
+struct LLMProvidersSection: View {
     @StateObject private var cache = DaemonCache.shared
     @State private var searchText = ""
-    @State private var expandedProviders: Set<String> = []
+    @State private var expandedProviders: Set<ProviderInstanceKey> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -176,26 +176,27 @@ struct LLMProvidersTab: View {
 
             if cache.llmProvidersLoading && !cache.llmProvidersLoaded {
                 LLMTabHelpers.loadingView
+                    .frame(minHeight: 120)
             } else if let error = cache.llmProvidersError {
-                LLMTabHelpers.errorView(error) { Task { await cache.loadLLMProviders(force: true) } }
+                LLMTabHelpers.errorView(error) { Task { await refreshProviders() } }
+                    .frame(minHeight: 120)
             } else if filteredProviders.isEmpty {
                 LLMTabHelpers.emptyView(icon: "cpu",
                                         message: "No providers found",
                                         hint: "LLM providers will appear when the daemon is running")
+                    .frame(minHeight: 120)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(filteredProviders) { provider in
-                            ProviderAccordionCard(
-                                provider: provider,
-                                isExpanded: expandedProviders.contains(provider.id),
-                                onToggle: { toggleExpanded(provider.id) }
-                            )
-                        }
+                LazyVStack(spacing: 8) {
+                    ForEach(filteredProviders.sorted(by: Self.providerSort)) { provider in
+                        ProviderAccordionCard(
+                            provider: provider,
+                            isExpanded: expandedProviders.contains(provider.key),
+                            onToggle: { toggleExpanded(provider.key) }
+                        )
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
         }
         .background(TerminalTheme.bg)
@@ -223,10 +224,7 @@ struct LLMProvidersTab: View {
             TerminalSearchBox(text: $searchText)
 
             LLMTabHelpers.refreshButton {
-                Task {
-                    await cache.loadLLMProviders(force: true)
-                    cache.clearProviderModels()
-                }
+                Task { await refreshProviders() }
             }
         }
         .padding(.horizontal, 16)
@@ -246,12 +244,31 @@ struct LLMProvidersTab: View {
         }
     }
 
-    private func toggleExpanded(_ id: String) {
+    private static func providerSort(_ lhs: CachedLLMProvider, _ rhs: CachedLLMProvider) -> Bool {
+        let providerOrder = lhs.provider.caseInsensitiveCompare(rhs.provider)
+        if providerOrder != .orderedSame { return providerOrder == .orderedAscending }
+
+        let instanceOrder = lhs.instance.caseInsensitiveCompare(rhs.instance)
+        if instanceOrder != .orderedSame { return instanceOrder == .orderedAscending }
+
+        if lhs.provider != rhs.provider { return lhs.provider < rhs.provider }
+        if lhs.instance != rhs.instance { return lhs.instance < rhs.instance }
+        return lhs.id < rhs.id
+    }
+
+    private func refreshProviders() async {
+        await cache.loadLLMProviders(force: true)
+        guard !cache.llmProvidersLoading, cache.llmProvidersError == nil else { return }
+        expandedProviders.removeAll()
+        cache.clearProviderModels()
+    }
+
+    private func toggleExpanded(_ key: ProviderInstanceKey) {
         withAnimation(.easeInOut(duration: 0.2)) {
-            if expandedProviders.contains(id) {
-                expandedProviders.remove(id)
+            if expandedProviders.contains(key) {
+                expandedProviders.remove(key)
             } else {
-                expandedProviders.insert(id)
+                expandedProviders.insert(key)
             }
         }
     }
@@ -266,14 +283,23 @@ private struct ProviderAccordionCard: View {
 
     @StateObject private var cache = DaemonCache.shared
 
-    private var stateOk: Bool { provider.circuitState == "closed" }
-    private var stateColor: Color { stateOk ? TerminalTheme.green : TerminalTheme.red }
+    private var stateColor: Color {
+        switch provider.circuitState {
+        case .closed:   return TerminalTheme.green
+        case .halfOpen: return TerminalTheme.yellow
+        case .open:     return TerminalTheme.red
+        case .unknown:  return TerminalTheme.gray
+        }
+    }
 
     private var models: [CachedLLMModel] {
-        cache.providerModels[provider.provider] ?? []
+        cache.providerModels[provider.key] ?? []
     }
     private var modelsLoading: Bool {
-        cache.providerModelsLoading[provider.provider] ?? false
+        cache.providerModelsLoading.contains(provider.key)
+    }
+    private var modelsError: String? {
+        cache.providerModelsErrors[provider.key]
     }
 
     var body: some View {
@@ -286,8 +312,8 @@ private struct ProviderAccordionCard: View {
             }
         }
         .onChange(of: isExpanded) { expanded in
-            if expanded && cache.providerModels[provider.provider] == nil {
-                Task { await cache.loadProviderModels(provider.provider) }
+            if expanded && cache.providerModels[provider.key] == nil {
+                Task { await cache.loadProviderModels(for: provider.key) }
             }
         }
     }
@@ -328,7 +354,7 @@ private struct ProviderAccordionCard: View {
 
                 VStack(alignment: .trailing, spacing: 4) {
                     LLMTabHelpers.tierBadge(provider.tier)
-                    Text(provider.circuitState)
+                    Text(provider.circuitState.label)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(stateColor)
                 }
@@ -365,13 +391,27 @@ private struct ProviderAccordionCard: View {
                     Spacer()
                 }
                 .padding(.vertical, 10)
+            } else if let modelsError {
+                HStack(spacing: 8) {
+                    Text(modelsError)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(TerminalTheme.textDim)
+                    Button("Retry") {
+                        Task { await cache.loadProviderModels(for: provider.key) }
+                    }
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(TerminalTheme.accent)
+                    .buttonStyle(.plain)
+                    .pointerCursor()
+                }
+                .padding(.vertical, 10)
             } else if models.isEmpty {
                 Text("no models registered")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(TerminalTheme.textDim.opacity(0.5))
                     .padding(.vertical, 10)
             } else {
-                VStack(spacing: 4) {
+                LazyVStack(spacing: 4) {
                     ForEach(models) { model in
                         modelRow(model)
                     }
@@ -421,9 +461,15 @@ private struct ProviderAccordionCard: View {
                 }
             }
 
-            Circle()
-                .fill(model.enabled ? TerminalTheme.green : TerminalTheme.red)
-                .frame(width: 5, height: 5)
+            if !model.enabled {
+                Text("disabled")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundColor(TerminalTheme.textDim)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(TerminalTheme.surfaceBg)
+                    .cornerRadius(3)
+            }
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 4)

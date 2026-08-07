@@ -38,29 +38,30 @@ The icon shows a Legion network grid with a colored status badge:
 
 ## Dashboard
 
-A native window with twelve tabs:
+A native window with eleven persistent sidebar destinations:
 
-| Tab        | Shows                                                        |
-|------------|--------------------------------------------------------------|
-| Clients    | Claude Code, Codex, and Kai — install status, per-client LegionIO ↔ native routing toggle, one-click open buttons |
-| Services   | Per-service cards with start/stop, daemon component readiness |
-| Logs       | Live daemon log viewer with auto-scroll and clear            |
-| Identity   | Current session identity and auth provider status            |
-| LLM        | LLM configuration and model routing settings                 |
-| Providers  | Registered LLM providers with model details                  |
-| GAIA       | Cognitive coordination engine status                         |
-| MCP        | Model Context Protocol server connections                    |
-| Extensions | Installed/running LEX extensions with install/uninstall      |
-| Workers    | Active worker actors with task counts                        |
-| Updates    | Gem version checker with auto-update for lex-* extensions    |
-| Settings   | Daemon settings browser (read from `~/.legionio/settings/`)  |
+| Destination | Shows |
+|-------------|-------|
+| Routing     | Claude Code, Codex, and Kai routing controls followed by provider-instance circuit status and expandable model inventories |
+| Services    | Per-service cards with start/stop, daemon component readiness |
+| Logs        | Live daemon log viewer with auto-scroll and clear |
+| Identity    | Current session identity and auth provider status |
+| LLM         | LLM configuration and model routing settings |
+| GAIA        | Cognitive coordination engine status |
+| MCP         | Model Context Protocol server connections |
+| Extensions  | Installed/running LEX extensions with install/uninstall |
+| Workers     | Active worker actors with task counts |
+| Updates     | Gem version checker with auto-update for lex-* extensions |
+| Settings    | Daemon settings browser (read from `~/.legionio/settings/`) |
+
+The Updates destination persists the **auto-update gems**, **auto-upgrade cli**, and **restart daemon** controls. Automatic CLI and gem work runs in order and restarts the daemon once after successful updates when enabled.
 
 ### Client Routing
 
-The Clients tab lets you route Claude Code, Codex, and Kai through the LegionIO daemon with a single click:
+The Routing destination lets you route Claude Code, Codex, and Kai through the LegionIO daemon with a single click:
 
-- **Toggle "LegionIO"** — Patches the client's config file to route through `localhost:4567`. Original config is backed up.
-- **Toggle "native"** — Restores the client's config from backup, reverting to its original configuration.
+- **Toggle "LegionIO"** — Patches the client's configuration to route through `localhost:4567`. Kai preserves backups of its settings files.
+- **Toggle "native"** — Removes the injected Claude Code and Codex settings; Kai restores its settings-file backups.
 - **Per-client** — Each client is toggled independently. Claude Code launches via Terminal, Codex and Kai open as desktop apps.
 - Routing state is persisted to `~/.legionio/settings/interlink.json` across app restarts.
 - Routing is disabled (toggle grayed out) when the daemon is offline.
@@ -70,7 +71,7 @@ Config files managed:
 |-------------|--------------------------------|
 | Claude Code | `~/.claude/settings.json`      |
 | Codex       | `~/.codex/config.toml`         |
-| Kai         | `~/.kai/config.toml`           |
+| Kai         | `~/.kai/settings/desktop.json`, `~/.kai/settings/llm.json` |
 
 ## First Launch (Onboarding)
 
@@ -129,22 +130,28 @@ swift build
 ### Project Structure
 
 ```
-Package.swift                     Swift package manifest (macOS 13, single executable target)
+Package.swift                     Swift package manifest (macOS 13, executable and test targets)
 VERSION                           Semver — read by CI
 Sources/
   LegionInterlinkApp.swift        @main, AppDelegate, menu bar icon, window management
   ServiceManager.swift            Service lifecycle, health polling, daemon process streaming
   DaemonAPI.swift                 HTTP client for daemon REST API
-  DaemonCache.swift               Cached models + lazy-loaded data for dashboard tabs
-  StatusWindow.swift              Dashboard window: tab bar, services tab, logs tab, theme
+  DaemonCache.swift               Cached models + lazy-loaded data for dashboard views
+  StatusWindow.swift              Dashboard shell, persistent sidebar, services, logs, and theme
+  DashboardDestination.swift      Ordered sidebar destinations and destination metadata
+  RoutingTab.swift                Client routing controls and provider-instance section
+  ProviderPresentation.swift      Provider circuit and model presentation state
+  InstalledGemParser.swift        Installed gem version parsing and lookup
   OnboardingView.swift            First-launch setup wizard
   ExtensionsTab.swift             Extensions tab
   WorkersTab.swift                Workers tab
-  LLMTab.swift                    Identity tab, LLM providers/models tab, shared UI helpers
+  LLMTab.swift                    Identity and provider-instance views plus shared UI helpers
+  LLMSettingsTab.swift            LLM configuration and model routing settings
   DaemonSettingsTab.swift         Settings browser (sidebar + content split pane)
   TerminalTextField.swift         Reusable search box component
   PointerCursor.swift             Pointer cursor view modifier
   Resources/icon.icns             App icon
+Tests/LegionInterlinkTests/       Destination, gem parser, and provider presentation tests
 scripts/
   dev                             Dev helper (build/run/clean)
   generate_icon.swift             Programmatic icon generator

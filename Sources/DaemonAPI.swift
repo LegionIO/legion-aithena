@@ -10,12 +10,14 @@ enum DaemonAPI {
     // MARK: - Public Methods
 
     static func get(_ path: String, query: [String: String]? = nil) async -> (data: Any?, ok: Bool) {
-        var urlString = "\(baseURL)\(path)"
+        guard var components = URLComponents(string: baseURL) else { return (nil, false) }
+        components.percentEncodedPath = path
         if let query, !query.isEmpty {
-            let qs = query.map { "\($0.key)=\($0.value)" }.joined(separator: "&")
-            urlString += "?\(qs)"
+            components.queryItems = query
+                .sorted { $0.key < $1.key }
+                .map { URLQueryItem(name: $0.key, value: $0.value) }
         }
-        guard let url = URL(string: urlString) else { return (nil, false) }
+        guard let url = components.url else { return (nil, false) }
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.httpMethod = "GET"
         return await perform(request)
