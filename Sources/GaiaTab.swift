@@ -339,11 +339,28 @@ struct GaiaStatus {
     let bufferSize: String
 
     static func from(_ dict: [String: Any]) -> GaiaStatus {
-        GaiaStatus(
-            state: dict["state"] as? String ?? dict["status"] as? String ?? "unknown",
+        // /api/gaia/status returns { started: Bool, mode: String, tick_mode: String, ... }
+        // Derive display state from the actual fields present in the response.
+        let isStarted = dict["started"] as? Bool ?? false
+        let tickMode = dict["tick_mode"] as? String ?? ""
+        let state: String
+        if !isStarted {
+            state = "stopped"
+        } else if tickMode == "active" {
+            state = "active"
+        } else {
+            state = tickMode.isEmpty ? "running" : tickMode
+        }
+
+        return GaiaStatus(
+            state: state,
             activeSessions: dict["active_sessions"] as? Int ?? dict["sessions"] as? Int ?? 0,
             channels: dict["channels"] as? [String] ?? dict["active_channels"] as? [String] ?? [],
-            bufferSize: dict["buffer_size"] as? String ?? (dict["buffer_count"] as? Int).map { "\($0) items" } ?? ""
+            bufferSize: (dict["sensory_buffer"] as? [String: Any]).map { sb in
+                let depth = sb["depth"] as? Int ?? 0
+                let maxCap = sb["max_capacity"] as? Int ?? 1000
+                return "\(depth)/\(maxCap)"
+            } ?? (dict["buffer_size"] as? String ?? "")
         )
     }
 }
